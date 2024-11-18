@@ -4,14 +4,16 @@ CC=nvcc
 C_FLAGS_NODE2=-ccbin /usr/bin/g++-9 -arch=sm_35 -Wno-deprecated-gpu-targets
 SRC=src/main.cu
 TARGET=k_means_clustering
+TARGET_NODE2=${TARGET}-NODE2
+TARGET_NODE3=${TARGET}-NODE3
 
-node2: ${TARGET}-NODE2
-node3: ${TARGET}-NODE3
+node2: ${TARGET_NODE2}
+node3: ${TARGET_NODE3}
 
-${TARGET}-NODE2:
+${TARGET_NODE2}:
 	${CC} ${C_FLAGS_NODE2} -o ${TARGET} ${SRC}
 
-${TARGET}-NODE3:
+${TARGET_NODE3}:
 	${CC} -o ${TARGET} ${SRC}
 
 clean:

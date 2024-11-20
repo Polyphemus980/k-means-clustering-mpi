@@ -44,6 +44,6 @@ It may be the case that points assigned to given centroid are not stored in one 
 
 #### Second method
 
-In second method we will use Thrust API. Firsly, we will use `thrust::sort` to group points with same membership to be next to each other. Next, we will use `thrust::reduce_by_key` to calculate mean for each cluster and this way getting new centroids
+In second method we will use Thrust API. Firsly, we will use `thrust::sort` to group points with same membership to be next to each other. Next, we will use `thrust::reduce_by_key` to calculate mean for each cluster and this way get new centroids
 
 The main part will be run in loop until threshold condition is met. Each time new kernel will be launched, as we need block synchronization between loop steps.

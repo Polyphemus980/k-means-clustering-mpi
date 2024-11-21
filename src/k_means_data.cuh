@@ -12,6 +12,7 @@
 namespace KMeansData
 {
 
+    // TODO: remove it, just put std::vecttor<float> _clustersValues in KMeansData
     template <size_t DIM>
     class Cluster
     {
@@ -39,6 +40,7 @@ namespace KMeansData
         // This is vector of all coords combinec
         // For example for DIM = 3 and 2 points its:
         // [x1 x2 y1 y2 z1 z2]
+        // TODO: maybe use thrust::host_vector
         std::vector<float> _values;
 
     public:
@@ -63,6 +65,7 @@ namespace KMeansData
                 throw std::runtime_error("Invalid first line, expected \"<POINTS_COUNT> <CLUSTERS_COUNT>\"");
             }
 
+            // TODO: here we should also load initial clusters
             this->_values.resize(this->_points_count * DIM);
             for (size_t i = 0; i < this->_points_count; i++)
             {

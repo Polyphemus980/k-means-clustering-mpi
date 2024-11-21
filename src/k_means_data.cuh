@@ -1,8 +1,8 @@
 #ifndef K_MEANS_DATA
 #define K_MEANS_DATA
 
+#include <cstdio>
 #include <thrust/host_vector.h>
-#include <filesystem>
 #include <string>
 #include <sstream>
 #include <fstream>
@@ -23,51 +23,54 @@ namespace KMeansData
         // The same idea is for storing clusters
         thrust::host_vector<float> _clustersValues;
 
-    public:
-        KMeansData<DIM>(const std::filesystem::path &filePath)
+        KMeansData<DIM>(size_t pointsCount, size_t clustersCount, thrust::host_vector<float> values, thrust::host_vector<float> clustersValues) : _pointsCount(pointsCount), _clustersCount(clustersCount), _values(values), _clustersValues(clustersValues)
         {
-            std::ifstream file{filePath};
+        }
 
+    public:
+        // We assume that first line of file is already read - we are only reading points
+        // This function take ownership of the `file` and must close it
+        static KMeansData<DIM> LoadFromTextFile(FILE *file, size_t pointsCount, size_t clustersCount)
+        {
             if (!file)
             {
-                throw std::runtime_error{"Error while reading input from file: file not opened"};
+                throw std::invalid_argument("Error: invalid file pointer");
             }
 
-            std::string line;
-            // load first line with N and k
-            if (!std::getline(file, line))
+            thrust::host_vector<float> values{};
+            values.resize(pointsCount * DIM);
+            thrust::host_vector<float> clustersValues{};
+            clustersValues.resize(clustersCount * DIM);
+            for (size_t i = 0; i < pointsCount; i++)
             {
-                throw std::runtime_error("Error input file: empty file");
-            }
-            std::istringstream iss{line};
-            if (!(iss >> this->_pointsCount >> this->_clustersCount))
-            {
-                throw std::runtime_error("Invalid first line, expected \"<POINTS_COUNT> <CLUSTERS_COUNT>\"");
-            }
-
-            this->_values.resize(this->_pointsCount * DIM);
-            this->_clustersValues.resize(this->_clustersCount * DIM);
-            for (size_t i = 0; i < this->_pointsCount; i++)
-            {
-                if (!std::getline(file, line))
-                {
-                    throw std::runtime_error{"Invalid input file: too few points provided"};
-                }
-                std::istringstream iss{line};
                 for (size_t j = 0; j < DIM; j++)
                 {
-                    iss >> this->_values[j * this->_pointsCount + i];
-                    if (i < this->_clustersCount)
+                    fscanf(file, "%f", &values[j * pointsCount + i]);
+                    if (i < clustersCount)
                     {
-                        this->_clustersValues[j * this->_pointsCount + i] = this->_values[j * this->_pointsCount + i];
+                        clustersValues[j * pointsCount + i] = values[j * pointsCount + i];
                     }
                 }
             }
+
+            fclose(file);
+            KMeansData<DIM> data{pointsCount, clustersCount, values, clustersValues};
+            return data;
         }
 
         const thrust::host_vector<float> &getValues() const
         {
             return this->_values;
+        }
+
+        size_t getPointsCount() const
+        {
+            return this->_pointsCount;
+        }
+
+        size_t getClustersCount() const
+        {
+            return this->_clustersCount;
         }
 
         const thrust::host_vector<float> &getClustersValues() const

@@ -3,8 +3,8 @@ CC=nvcc
 # the last flag disables warning error (it seems like sm_35 is deprecated)
 C_FLAGS_NODE2=-ccbin /usr/bin/g++-9 -arch=sm_35 -Wno-deprecated-gpu-targets
 C_FLAGS_NODE3=--std=c++20
-SRC=src/main.cu
-TARGET=k_means_clustering
+SRC=src/main.cu src/utils.cu
+TARGET=KMeans
 TARGET_NODE2=${TARGET}-NODE2
 TARGET_NODE3=${TARGET}-NODE3
 

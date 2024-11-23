@@ -2,6 +2,8 @@
 #define FILE_IO_H
 
 #include <cstdlib>
+#include <exception>
+
 #include "utils.cuh"
 #include "k_means_data.cuh"
 #include "k_means_clustering_cpu.cuh"
@@ -26,7 +28,10 @@ namespace FileIO
         {
             for (size_t j = 0; j < DIM; j++)
             {
-                fscanf(file, "%f", &values[j * pointsCount + i]);
+                if (fscanf(file, "%f", &values[j * pointsCount + i]) != 1)
+                {
+                    throw std::runtime_error("Invalid txt file format");
+                }
                 if (i < clustersCount)
                 {
                     clustersValues[j * clustersCount + i] = values[j * pointsCount + i];
@@ -67,7 +72,7 @@ namespace FileIO
 
         for (size_t i = 0; i < results.membership.size(); i++)
         {
-            fprintf(file, "%d\n", results.membership[i]);
+            fprintf(file, "%zu\n", results.membership[i]);
         }
 
         fclose(file);

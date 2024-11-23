@@ -1,4 +1,4 @@
-#include <cstdio>
+#include <iostream>
 
 #include "utils.cuh"
 
@@ -10,12 +10,5 @@ namespace Utils
         std::cout << "data_format - txt or bin\n";
         std::cout << "computation_method - gpu1, gpu2 or cpu\n";
         std::exit(1);
-    }
-
-    Parameters loadParamsFromTextFile(FILE *file)
-    {
-        Parameters p{};
-        fscanf(file, "%zu %zu %zu", &p.pointsCount, &p.dimensions, &p.clustersCount);
-        return p;
     }
 } // Utils

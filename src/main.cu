@@ -6,6 +6,7 @@
 #include "utils.cuh"
 #include "k_means_data.cuh"
 #include "k_means_clustering_cpu.cuh"
+#include "file_io.cuh"
 
 // This function is an actual entry point
 // We assume that at this point `inputFile` is changed in a way that
@@ -13,7 +14,7 @@
 template <size_t DIM>
 void start(FILE *inputFile, size_t pointsCount, size_t clustersCount, Utils::ProgramArgs &programArgs)
 {
-    auto h_kMeansData = KMeansData::KMeansData<DIM>::LoadFromTextFile(inputFile, pointsCount, clustersCount);
+    auto h_kMeansData = FileIO::LoadFromTextFile<DIM>(inputFile, pointsCount, clustersCount);
     auto result = KMeansClusteringCPU::kMeanClustering(h_kMeansData);
 }
 
@@ -71,7 +72,7 @@ int main(int argc, char **argv)
 
     if (args.inputFileType == Utils::InputFileType::TEXT)
     {
-        parameters = Utils::loadParamsFromTextFile(inputFile);
+        parameters = FileIO::loadParamsFromTextFile(inputFile);
     }
 
     switch (parameters.dimensions)

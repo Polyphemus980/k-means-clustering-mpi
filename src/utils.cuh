@@ -1,7 +1,6 @@
 #ifndef UTILS_H
 #define UTILS_H
 
-#include <cstdlib>
 #include <iostream>
 
 namespace Utils
@@ -35,7 +34,6 @@ namespace Utils
     } Parameters;
 
     void usage(const char *s);
-    Parameters loadParamsFromTextFile(FILE *file);
 } // Utils
 
 #endif // UTILS_H

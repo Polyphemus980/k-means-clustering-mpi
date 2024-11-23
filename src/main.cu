@@ -5,6 +5,7 @@
 
 #include "utils.cuh"
 #include "k_means_data.cuh"
+#include "k_means_clustering_cpu.cuh"
 
 // This function is an actual entry point
 // We assume that at this point `inputFile` is changed in a way that
@@ -13,18 +14,7 @@ template <size_t DIM>
 void start(FILE *inputFile, size_t pointsCount, size_t clustersCount, Utils::ProgramArgs &programArgs)
 {
     auto h_kMeansData = KMeansData::KMeansData<DIM>::LoadFromTextFile(inputFile, pointsCount, clustersCount);
-    auto points = h_kMeansData.getValues();
-    std::cout << "Number of points: " << points.size() / DIM << "\n";
-    auto firstX = h_kMeansData.getPointCoord(0, 0);
-    std::cout << "X of first point: " << firstX << "\n";
-    auto secondZ = h_kMeansData.getPointCoord(1, 2);
-    std::cout << "Z of second point: " << secondZ << "\n";
-
-    // Clusters
-    auto clusters = h_kMeansData.getClustersValues();
-    std::cout << "Number of clusters: " << clusters.size() / DIM << "\n";
-    auto firstClusterY = h_kMeansData.getClusterCoord(0, 1);
-    std::cout << "Y of first cluster: " << firstClusterY << "\n";
+    auto result = KMeansClusteringCPU::kMeanClustering(h_kMeansData);
 }
 
 int main(int argc, char **argv)

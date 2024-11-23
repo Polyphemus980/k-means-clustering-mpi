@@ -48,10 +48,8 @@ namespace KMeansData
                 throw std::invalid_argument("Error: invalid file pointer");
             }
 
-            thrust::host_vector<float> values{};
-            values.resize(pointsCount * DIM);
-            thrust::host_vector<float> clustersValues{};
-            clustersValues.resize(clustersCount * DIM);
+            thrust::host_vector<float> values(pointsCount * DIM);
+            thrust::host_vector<float> clustersValues(clustersCount * DIM);
             for (size_t i = 0; i < pointsCount; i++)
             {
                 for (size_t j = 0; j < DIM; j++)

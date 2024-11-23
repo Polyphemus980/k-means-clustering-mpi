@@ -28,7 +28,7 @@ namespace FileIO
                 fscanf(file, "%f", &values[j * pointsCount + i]);
                 if (i < clustersCount)
                 {
-                    clustersValues[j * pointsCount + i] = values[j * pointsCount + i];
+                    clustersValues[j * clustersCount + i] = values[j * pointsCount + i];
                 }
             }
         }

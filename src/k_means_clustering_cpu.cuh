@@ -17,26 +17,25 @@ namespace KMeansClusteringCPU
     } CpuClusteringResult;
 
     template <size_t DIM>
-    float calculatePointClusterDinstance(const KMeansData::KMeansData<DIM> &h_kMeansData, size_t pointIndex, thrust::host_vector<float> &clusters, size_t clusterIndex)
+    float calculatePointClusterDinstance(const thrust::host_vector<float> &points, size_t pointsCount, size_t pointIndex, const thrust::host_vector<float> &clusters, size_t clustersCount, size_t clusterIndex)
     {
         float distance = 0;
         for (size_t d = 0; d < DIM; d++)
         {
-            float diff = h_kMeansData.getPointCoord(pointIndex, d) - KMeansData::Helpers<DIM>::GetCoord(clusters, h_kMeansData.getClustersCount(), clusterIndex, d);
+            float diff = KMeansData::Helpers<DIM>::GetCoord(points, pointsCount, pointIndex, d) - KMeansData::Helpers<DIM>::GetCoord(clusters, clustersCount, clusterIndex, d);
             distance += diff * diff;
         }
         return sqrt(distance);
     }
 
     template <size_t DIM>
-    size_t findNearestCluster(const KMeansData::KMeansData<DIM> &h_kMeansData, size_t pointIndex, thrust::host_vector<float> &clusters)
+    size_t findNearestCluster(const thrust::host_vector<float> &points, size_t pointsCount, size_t pointIndex, const thrust::host_vector<float> &clusters, size_t clustersCount)
     {
-        auto points_values = h_kMeansData.getValues();
         size_t minIndex = 0;
-        float minDistance = calculatePointClusterDinstance(h_kMeansData, pointIndex, clusters, 0);
-        for (size_t j = 1; j < h_kMeansData.getClustersCount(); j++)
+        float minDistance = calculatePointClusterDinstance<DIM>(points, pointsCount, pointIndex, clusters, clustersCount, 0);
+        for (size_t j = 1; j < clustersCount; j++)
         {
-            float distance = calculatePointClusterDinstance(h_kMeansData, pointIndex, clusters, j);
+            float distance = calculatePointClusterDinstance<DIM>(points, pointsCount, pointIndex, clusters, clustersCount, j);
             if (distance < minDistance)
             {
                 minDistance = distance;
@@ -47,17 +46,17 @@ namespace KMeansClusteringCPU
     }
 
     template <size_t DIM>
-    void updateNewCluster(const KMeansData::KMeansData<DIM> &h_kMeansData, size_t pointIndex, size_t clusterIndex, thrust::host_vector<float> &newClusters, thrust::host_vector<size_t> &newClustersSize)
+    void updateNewCluster(const thrust::host_vector<float> &points, size_t pointsCount, size_t pointIndex, thrust::host_vector<float> &newClusters, thrust::host_vector<size_t> &newClustersSize, size_t clustersCount, size_t clusterIndex)
     {
         for (size_t d = 0; d < DIM; d++)
         {
-            newClusters[d * h_kMeansData.getClustersCount() + clusterIndex] += h_kMeansData.getPointCoord(pointIndex, d);
+            newClusters[d * clustersCount + clusterIndex] += KMeansData::Helpers<DIM>::GetCoord(points, pointsCount, pointIndex, d);
         }
         newClustersSize[clusterIndex]++;
     }
 
     template <size_t DIM>
-    void updateCluster(size_t clustersCount, thrust::host_vector<float> &clusters, thrust::host_vector<float> &newClusters, thrust::host_vector<size_t> &newClustersSize, size_t clusterIndex)
+    void updateCluster(thrust::host_vector<float> &clusters, const thrust::host_vector<float> &newClusters, const thrust::host_vector<size_t> &newClustersSize, size_t clustersCount, size_t clusterIndex)
     {
         for (size_t d = 0; d < DIM; d++)
         {
@@ -71,8 +70,11 @@ namespace KMeansClusteringCPU
     template <size_t DIM>
     CpuClusteringResult kMeanClustering(const KMeansData::KMeansData<DIM> &h_kMeansData)
     {
+        auto points = h_kMeansData.getValues();
+        auto pointsCount = h_kMeansData.getPointsCount();
+        auto clustersCount = h_kMeansData.getClustersCount();
         // we init this vector with n elements, each one with value k (meaning they aren't in any cluster)
-        thrust::host_vector<size_t> membership{h_kMeansData.getPointsCount(), h_kMeansData.getClustersCount()};
+        thrust::host_vector<size_t> membership(h_kMeansData.getPointsCount(), h_kMeansData.getClustersCount());
         bool has_change = false;
         thrust::host_vector<float> clusters{h_kMeansData.getClustersValues()};
         thrust::host_vector<float> newClusters(h_kMeansData.getClustersCount() * DIM, 0);
@@ -84,17 +86,17 @@ namespace KMeansClusteringCPU
             thrust::fill(newClustersSize.begin(), newClustersSize.end(), 0);
             for (size_t i = 0; i < h_kMeansData.getPointsCount(); i++)
             {
-                size_t nearestClusterIndex = findNearestCluster<DIM>(h_kMeansData, i, clusters);
+                size_t nearestClusterIndex = findNearestCluster<DIM>(points, pointsCount, i, clusters, clustersCount);
                 if (membership[i] != nearestClusterIndex)
                 {
                     membership[i] = nearestClusterIndex;
                     has_change = true;
                 }
-                updateNewCluster<DIM>(h_kMeansData, i, membership[i], newClusters, newClustersSize);
+                updateNewCluster<DIM>(points, pointsCount, i, newClusters, newClustersSize, clustersCount, membership[i]);
             }
-            for (size_t j = 0; j < h_kMeansData.getClustersCount(); j++)
+            for (size_t j = 0; j < clustersCount; j++)
             {
-                updateCluster<DIM>(h_kMeansData.getClustersCount(), clusters, newClusters, newClustersSize, j);
+                updateCluster<DIM>(clusters, newClusters, newClustersSize, clustersCount, j);
             }
             if (!has_change)
                 break;

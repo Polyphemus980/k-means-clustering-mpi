@@ -16,6 +16,7 @@ void start(FILE *inputFile, size_t pointsCount, size_t clustersCount, Utils::Pro
 {
     auto h_kMeansData = FileIO::LoadFromTextFile<DIM>(inputFile, pointsCount, clustersCount);
     auto result = KMeansClusteringCPU::kMeanClustering(h_kMeansData);
+    FileIO::SaveCPUResultToTextFile<DIM>(programArgs.outputFilePath, result, h_kMeansData.getClustersCount());
 }
 
 int main(int argc, char **argv)
@@ -56,7 +57,7 @@ int main(int argc, char **argv)
     }
     else
     {
-        std::cout << "IValid algorithm mode\n";
+        std::cout << "Invalid algorithm mode\n";
         Utils::usage(argv[0]);
     }
 

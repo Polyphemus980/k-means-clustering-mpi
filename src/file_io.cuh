@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include "utils.cuh"
 #include "k_means_data.cuh"
+#include "k_means_clustering_cpu.cuh"
 
 namespace FileIO
 {
@@ -36,6 +37,40 @@ namespace FileIO
         fclose(file);
         KMeansData::KMeansData<DIM> data{pointsCount, clustersCount, values, clustersValues};
         return data;
+    }
+
+    template <size_t DIM>
+    void SaveCPUResultToTextFile(const char *outputPath, KMeansClusteringCPU::CpuClusteringResult results, size_t clustersCount)
+    {
+        FILE *file = fopen(outputPath, "w");
+        if (!file)
+        {
+            throw std::invalid_argument("Error: cannot open output file");
+        }
+
+        for (size_t j = 0; j < clustersCount; j++)
+        {
+            for (size_t d = 0; d < DIM; d++)
+            {
+                auto value = KMeansData::Helpers<DIM>::GetCoord(results.clustersValues, clustersCount, j, d);
+                if (d == DIM - 1)
+                {
+                    fprintf(file, "%f", value);
+                }
+                else
+                {
+                    fprintf(file, "%f ", value);
+                }
+            }
+            fprintf(file, "\n");
+        }
+
+        for (size_t i = 0; i < results.membership.size(); i++)
+        {
+            fprintf(file, "%d\n", results.membership[i]);
+        }
+
+        fclose(file);
     }
 
 } // FileIO

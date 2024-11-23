@@ -10,6 +10,17 @@
 
 namespace KMeansData
 {
+
+    template <size_t DIM>
+    class Helpers
+    {
+    public:
+        static float __inline_hint__ GetCoord(const thrust::host_vector<float> &container, size_t elementsCount, size_t elementIndex, size_t coordIndex)
+        {
+            return container[coordIndex * elementsCount + elementIndex];
+        }
+    };
+
     template <size_t DIM>
     class KMeansData
     {
@@ -80,12 +91,12 @@ namespace KMeansData
 
         float __inline_hint__ getPointCoord(size_t pointIndex, size_t coordIndex) const
         {
-            return this->_values[coordIndex * this->_pointsCount + pointIndex];
+            return Helpers<DIM>::GetCoord(this->_values, this->_pointsCount, pointIndex, coordIndex);
         }
 
         float __inline_hint__ getClusterCoord(size_t clusterIndex, size_t coordIndex) const
         {
-            return this->_clustersValues[coordIndex * this->_pointsCount + clusterIndex];
+            return Helpers<DIM>::GetCoord(this->_clustersValues, this->_clustersCount, clusterIndex, coordIndex);
         }
     };
 } // KMeansData

@@ -27,15 +27,15 @@ namespace FileIO
         thrust::host_vector<float> clustersValues(clustersCount * DIM);
         for (size_t i = 0; i < pointsCount; i++)
         {
-            for (size_t j = 0; j < DIM; j++)
+            for (size_t d = 0; d < DIM; d++)
             {
-                if (fscanf(file, "%f", &values[j * pointsCount + i]) != 1)
+                if (fscanf(file, "%f", &values[d * pointsCount + i]) != 1)
                 {
                     throw std::runtime_error("Invalid txt file format");
                 }
                 if (i < clustersCount)
                 {
-                    clustersValues[j * clustersCount + i] = values[j * pointsCount + i];
+                    clustersValues[d * clustersCount + i] = values[d * pointsCount + i];
                 }
             }
         }
@@ -54,13 +54,30 @@ namespace FileIO
         }
 
         thrust::host_vector<float> values(pointsCount * DIM);
+        thrust::host_vector<float> clustersValues(clustersCount * DIM);
 
-        if (fread(values.data(), sizeof(float), values.size(), file) != values.size())
+        float *buffer = (float *)malloc(sizeof(float) * values.size());
+        if (buffer == nullptr)
+        {
+            throw std::runtime_error("Cannot malloc buffer");
+        }
+        if (fread(buffer, sizeof(float), values.size(), file) != values.size())
         {
             throw std::runtime_error("Invalid binary file format");
         }
 
-        thrust::host_vector<float> clustersValues(values.begin(), values.begin() + clustersCount * DIM);
+        for (size_t i = 0; i < pointsCount; i++)
+        {
+            for (size_t d = 0; d < DIM; d++)
+            {
+
+                values[d * pointsCount + i] = buffer[i * DIM + d];
+                if (i < clustersCount)
+                {
+                    clustersValues[d * clustersCount + i] = values[d * pointsCount + i];
+                }
+            }
+        }
 
         fclose(file);
         KMeansData::KMeansData<DIM> data{pointsCount, clustersCount, values, clustersValues};

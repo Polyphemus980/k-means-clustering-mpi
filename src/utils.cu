@@ -1,7 +1,5 @@
 #include <iostream>
 
-#include "utils.cuh"
-
 namespace Utils
 {
     void usage(const char *s)

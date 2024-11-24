@@ -1,7 +1,7 @@
 #ifndef UTILS_H
 #define UTILS_H
 
-#include <iostream>
+#include <thrust/host_vector.h>
 
 namespace Utils
 {
@@ -31,6 +31,12 @@ namespace Utils
         size_t pointsCount;
         size_t clustersCount;
         size_t dimensions;
+    };
+
+    struct ClusteringResult
+    {
+        thrust::host_vector<float> clustersValues;
+        thrust::host_vector<size_t> membership;
     };
 
     void usage(const char *s);

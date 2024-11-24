@@ -85,7 +85,7 @@ namespace FileIO
     }
 
     template <size_t DIM>
-    void SaveCPUResultToTextFile(const char *outputPath, KMeansClusteringCPU::CpuClusteringResult results, size_t clustersCount)
+    void SaveResultToTextFile(const char *outputPath, Utils::ClusteringResult results, size_t clustersCount)
     {
         FILE *file = fopen(outputPath, "w");
         if (!file)

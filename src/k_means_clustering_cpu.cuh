@@ -7,14 +7,10 @@
 
 #include "k_means_data.cuh"
 #include "consts.cuh"
+#include "utils.cuh"
 
 namespace KMeansClusteringCPU
 {
-    struct CpuClusteringResult
-    {
-        thrust::host_vector<float> clustersValues;
-        thrust::host_vector<size_t> membership;
-    };
 
     template <size_t DIM>
     float calculatePointClusterDinstance(const thrust::host_vector<float> &points, size_t pointsCount, size_t pointIndex, const thrust::host_vector<float> &clusters, size_t clustersCount, size_t clusterIndex)
@@ -68,7 +64,7 @@ namespace KMeansClusteringCPU
     }
 
     template <size_t DIM>
-    CpuClusteringResult kMeanClustering(const KMeansData::KMeansData<DIM> &h_kMeansData)
+    Utils::ClusteringResult kMeanClustering(const KMeansData::KMeansData<DIM> &h_kMeansData)
     {
         auto points = h_kMeansData.getValues();
         auto pointsCount = h_kMeansData.getPointsCount();
@@ -101,7 +97,7 @@ namespace KMeansClusteringCPU
             if (!has_change)
                 break;
         }
-        return CpuClusteringResult{
+        return Utils::ClusteringResult{
             .clustersValues = clusters,
             .membership = membership};
     }

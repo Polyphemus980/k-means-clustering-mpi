@@ -28,7 +28,7 @@ void start(FILE *inputFile, size_t pointsCount, size_t clustersCount, Utils::Pro
         throw std::runtime_error("UNREACHABLE");
     }
     auto result = KMeansClusteringCPU::kMeanClustering(h_kMeansData);
-    FileIO::SaveCPUResultToTextFile<DIM>(programArgs.outputFilePath, result, h_kMeansData.getClustersCount());
+    FileIO::SaveResultToTextFile<DIM>(programArgs.outputFilePath, result, h_kMeansData.getClustersCount());
 }
 
 int main(int argc, char **argv)

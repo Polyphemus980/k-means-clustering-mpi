@@ -35,6 +35,8 @@ namespace KMeansData
         thrust::host_vector<float> _clustersValues;
 
     public:
+        KMeansData<DIM>() {}
+
         KMeansData<DIM>(size_t pointsCount, size_t clustersCount, thrust::host_vector<float> values, thrust::host_vector<float> clustersValues) : _pointsCount(pointsCount), _clustersCount(clustersCount), _values(values), _clustersValues(clustersValues)
         {
         }

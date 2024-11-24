@@ -10,7 +10,8 @@
 
 namespace FileIO
 {
-    Utils::Parameters loadParamsFromTextFile(FILE *file);
+    Utils::Parameters LoadParamsFromTextFile(FILE *file);
+    Utils::Parameters LoadParamsFromBinFile(FILE *file);
 
     // We assume that first line of file is already read - we are only reading points
     // This function take ownership of the `file` and must close it
@@ -38,6 +39,28 @@ namespace FileIO
                 }
             }
         }
+
+        fclose(file);
+        KMeansData::KMeansData<DIM> data{pointsCount, clustersCount, values, clustersValues};
+        return data;
+    }
+
+    template <size_t DIM>
+    KMeansData::KMeansData<DIM> LoadFromBinFile(FILE *file, size_t pointsCount, size_t clustersCount)
+    {
+        if (!file)
+        {
+            throw std::invalid_argument("Error: invalid file pointer");
+        }
+
+        thrust::host_vector<float> values(pointsCount * DIM);
+
+        if (fread(values.data(), sizeof(float), values.size(), file) != values.size())
+        {
+            throw std::runtime_error("Invalid binary file format");
+        }
+
+        thrust::host_vector<float> clustersValues(values.begin(), values.begin() + clustersCount * DIM);
 
         fclose(file);
         KMeansData::KMeansData<DIM> data{pointsCount, clustersCount, values, clustersValues};

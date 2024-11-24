@@ -14,7 +14,19 @@
 template <size_t DIM>
 void start(FILE *inputFile, size_t pointsCount, size_t clustersCount, Utils::ProgramArgs &programArgs)
 {
-    auto h_kMeansData = FileIO::LoadFromTextFile<DIM>(inputFile, pointsCount, clustersCount);
+    KMeansData::KMeansData<DIM> h_kMeansData;
+    if (programArgs.inputFileType == Utils::InputFileType::TEXT)
+    {
+        h_kMeansData = FileIO::LoadFromTextFile<DIM>(inputFile, pointsCount, clustersCount);
+    }
+    else if (programArgs.inputFileType == Utils::InputFileType::BINARY)
+    {
+        h_kMeansData = FileIO::LoadFromBinFile<DIM>(inputFile, pointsCount, clustersCount);
+    }
+    else
+    {
+        throw std::runtime_error("UNREACHABLE");
+    }
     auto result = KMeansClusteringCPU::kMeanClustering(h_kMeansData);
     FileIO::SaveCPUResultToTextFile<DIM>(programArgs.outputFilePath, result, h_kMeansData.getClustersCount());
 }
@@ -73,7 +85,15 @@ int main(int argc, char **argv)
 
     if (args.inputFileType == Utils::InputFileType::TEXT)
     {
-        parameters = FileIO::loadParamsFromTextFile(inputFile);
+        parameters = FileIO::LoadParamsFromTextFile(inputFile);
+    }
+    else if (args.inputFileType == Utils::InputFileType::BINARY)
+    {
+        parameters = FileIO::LoadParamsFromBinFile(inputFile);
+    }
+    else
+    {
+        throw std::runtime_error("UNREACHABLE");
     }
 
     switch (parameters.dimensions)

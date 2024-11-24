@@ -18,20 +18,20 @@ namespace Utils
         BINARY
     };
 
-    typedef struct
+    struct ProgramArgs
     {
         AlgorithmMode algorithmMode;
         InputFileType inputFileType;
         const char *inputFilePath;
         const char *outputFilePath;
-    } ProgramArgs;
+    };
 
-    typedef struct
+    struct Parameters
     {
         size_t pointsCount;
         size_t clustersCount;
         size_t dimensions;
-    } Parameters;
+    };
 
     void usage(const char *s);
 } // Utils

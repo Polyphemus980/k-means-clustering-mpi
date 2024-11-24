@@ -10,11 +10,11 @@
 
 namespace KMeansClusteringCPU
 {
-    typedef struct
+    struct CpuClusteringResult
     {
         thrust::host_vector<float> clustersValues;
         thrust::host_vector<size_t> membership;
-    } CpuClusteringResult;
+    };
 
     template <size_t DIM>
     float calculatePointClusterDinstance(const thrust::host_vector<float> &points, size_t pointsCount, size_t pointIndex, const thrust::host_vector<float> &clusters, size_t clustersCount, size_t clusterIndex)

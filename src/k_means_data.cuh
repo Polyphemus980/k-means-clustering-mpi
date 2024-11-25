@@ -10,14 +10,32 @@
 
 namespace KMeansData
 {
+    struct KMeansDataGPU
+    {
+        size_t pointsCount;
+        size_t clustersCount;
+        float *d_pointsValues;
+        float *d_clustersValues;
+
+        ~KMeansDataGPU()
+        {
+            cudaFree(d_pointsValues);
+            cudaFree(d_clustersValues);
+        }
+    };
 
     template <size_t DIM>
     class Helpers
     {
     public:
-        static float __inline_hint__ GetCoord(const thrust::host_vector<float> &container, size_t elementsCount, size_t elementIndex, size_t coordIndex)
+        __inline_hint__ static float GetCoord(const thrust::host_vector<float> &container, size_t elementsCount, size_t elementIndex, size_t coordIndex)
         {
             return container[coordIndex * elementsCount + elementIndex];
+        }
+
+        __inline_hint__ __device__ static float GetCoord(const float *d_container, size_t elementsCount, size_t elementIndex, size_t coordIndex)
+        {
+            return d_container[coordIndex * elementsCount + elementIndex];
         }
     };
 
@@ -69,6 +87,23 @@ namespace KMeansData
         float __inline_hint__ getClusterCoord(size_t clusterIndex, size_t coordIndex) const
         {
             return Helpers<DIM>::GetCoord(this->_clustersValues, this->_clustersCount, clusterIndex, coordIndex);
+        }
+
+        KMeansDataGPU transformToGPURepresentation() const
+        {
+            // TODO: handle cuda errors
+            float *d_pointsValues;
+            float *d_clustersValues;
+            cudaMalloc(&d_pointsValues, sizeof(float) * _values.size());
+            cudaMalloc(&d_clustersValues, sizeof(float) * _clustersValues.size());
+            cudaMemcpy(d_pointsValues, _values.data(), sizeof(float) * _values.size(), cudaMemcpyHostToDevice);
+            cudaMemcpy(d_clustersValues, _clustersValues.data(), sizeof(float) * _clustersValues.size(), cudaMemcpyHostToDevice);
+            return KMeansDataGPU{
+                .pointsCount = _pointsCount,
+                .clustersCount = _clustersCount,
+                .d_pointsValues = d_pointsValues,
+                .d_clustersValues = d_clustersValues,
+            };
         }
     };
 } // KMeansData

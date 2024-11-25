@@ -3,6 +3,18 @@
 
 #include <thrust/host_vector.h>
 
+#define CHECK_CUDA(call)                                                      \
+    {                                                                         \
+        cudaError_t err = (call);                                             \
+        if (err != cudaSuccess)                                               \
+        {                                                                     \
+            throw std::runtime_error(std::string("CUDA Error: ") +            \
+                                     cudaGetErrorString(err) +                \
+                                     " in file " + __FILE__ +                 \
+                                     " at line " + std::to_string(__LINE__)); \
+        }                                                                     \
+    }
+
 namespace Utils
 {
     enum class AlgorithmMode

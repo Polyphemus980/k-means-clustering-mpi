@@ -4,9 +4,10 @@
 #include <cstring>
 
 #include "utils.cuh"
+#include "file_io.cuh"
 #include "k_means_data.cuh"
 #include "k_means_clustering_cpu.cuh"
-#include "file_io.cuh"
+#include "k_means_clustering_gpu_sm.cuh"
 
 // This function is an actual entry point
 // We assume that at this point `inputFile` is changed in a way that
@@ -27,7 +28,20 @@ void start(FILE *inputFile, size_t pointsCount, size_t clustersCount, Utils::Pro
     {
         throw std::runtime_error("UNREACHABLE");
     }
-    auto result = KMeansClusteringCPU::kMeanClustering(h_kMeansData);
+
+    Utils::ClusteringResult result;
+    switch (programArgs.algorithmMode)
+    {
+    case Utils::AlgorithmMode::CPU:
+        result = KMeansClusteringCPU::kMeanClustering<DIM>(h_kMeansData);
+        break;
+    case Utils::AlgorithmMode::GPU_FIRST:
+        result = KMeansClusteringGPUSM::kMeansClustering<DIM>(h_kMeansData.transformToGPURepresentation());
+        break;
+    default:
+        throw std::runtime_error("UNREACHABLE");
+    }
+
     FileIO::SaveResultToTextFile<DIM>(programArgs.outputFilePath, result, h_kMeansData.getClustersCount());
 }
 

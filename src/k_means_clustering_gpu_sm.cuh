@@ -46,8 +46,6 @@ namespace KMeansClusteringGPUSM
     template <size_t DIM>
     __global__ void calculateMembershipAndNewClusters(KMeansData::KMeansDataGPU d_data, float *d_newClusters, uint32_t *d_newClustersMembershipCount, size_t *d_memberships /*, bool *hasAnyChanged*/)
     {
-        // FIXME: invlaid memory access, probalby with localThreadId
-
         auto threadId = blockDim.x * blockIdx.x + threadIdx.x;
         auto localThreadId = threadIdx.x;
 
@@ -61,12 +59,11 @@ namespace KMeansClusteringGPUSM
         // {
         //     s_hasChanged[0] = false;
         // }
-        if (threadId < d_data.clustersCount * DIM * blockDim.x)
+        if (localThreadId < d_data.clustersCount * DIM)
         {
-            s_clusters[localThreadId] = d_data.d_clustersValues[threadId];
+            s_clusters[localThreadId] = d_data.d_clustersValues[localThreadId];
         }
-        return;
-        if (threadId < d_data.clustersCount * blockDim.x)
+        if (localThreadId < d_data.clustersCount)
         {
             s_clustersMembershipCount[localThreadId] = 0;
         }
@@ -93,7 +90,7 @@ namespace KMeansClusteringGPUSM
         // Finish all calculation made on shared memory
         __syncthreads();
 
-        if (threadId < d_data.clustersCount * DIM * blockDim.x)
+        if (threadId < d_data.clustersCount * DIM * blockDim.x && localThreadId < d_data.clustersCount * DIM)
         {
             // if (threadId == 0)
             // {
@@ -102,7 +99,7 @@ namespace KMeansClusteringGPUSM
             d_newClusters[threadId] = s_clusters[localThreadId];
         }
 
-        if (threadId < d_data.clustersCount * blockDim.x)
+        if (threadId < d_data.clustersCount * blockDim.x && localThreadId < d_data.clustersCount)
         {
             d_newClustersMembershipCount[threadId] = s_clustersMembershipCount[localThreadId];
         }
@@ -111,24 +108,36 @@ namespace KMeansClusteringGPUSM
     // Function for updating clusters based on new membership
     // There should be thread spawned for every cluster for every dimension, so CLUSTERS_COUNT * DIM total
     template <size_t DIM>
-    __global__ void updateClusters(KMeansData::KMeansDataGPU d_data, float *d_newClusters, uint32_t *d_newClustersMembershipCount, size_t previousBlocksCount)
+    __global__ void updateClusters(KMeansData::KMeansDataGPU d_data, size_t *d_clustersMembershipCount, float *d_newClusters, uint32_t *d_newClustersMembershipCount, size_t previousBlocksCount)
     {
         auto threadId = blockDim.x * blockIdx.x + threadIdx.x;
+        if (threadId < d_data.clustersCount)
+        {
+            d_clustersMembershipCount[threadId] = 0;
+            for (size_t b = 0; b < previousBlocksCount; b++)
+            {
+                d_clustersMembershipCount[threadId] += d_newClustersMembershipCount[d_data.clustersCount * b + threadId];
+            }
+        }
+
         if (threadId < d_data.clustersCount * DIM)
         {
+            d_data.d_clustersValues[threadId] = 0;
             // We sum data from each block
             for (size_t b = 0; b < previousBlocksCount; b++)
             {
-                d_data.d_clustersValues[threadId] += d_newClusters[threadId * b];
+                d_data.d_clustersValues[threadId] += d_newClusters[d_data.clustersCount * DIM * b + threadId];
             }
             // Can we somehow remove this `%` operation? its probably slow
-            d_data.d_clustersValues[threadId] /= d_newClustersMembershipCount[threadId % DIM];
+            d_data.d_clustersValues[threadId] /= d_clustersMembershipCount[threadId % DIM];
         }
     }
 
     template <size_t DIM>
     Utils::ClusteringResult kMeansClustering(KMeansData::KMeansDataGPU d_data)
     {
+        // FIXME: there is no runtime error but results are incorrect
+
         // FIXME: instead of pointsCount it should be max of pointsCount, dim * clustersCount * newClustersBlocksCount
         const uint32_t newClustersBlocksCount = ceil(d_data.pointsCount * 1.0 / Consts::THREADS_PER_BLOCK);
         const size_t newClustersSharedMemorySize = d_data.clustersCount * DIM * sizeof(float) + d_data.clustersCount * sizeof(uint32_t);
@@ -142,9 +151,11 @@ namespace KMeansClusteringGPUSM
         }
 
         size_t *d_memberships;
+        size_t *d_clustersMembershipCount;
         float *d_newClusters;
         uint32_t *d_newClustersMembershipCount;
         CHECK_CUDA(cudaMalloc(&d_memberships, sizeof(size_t) * d_data.pointsCount));
+        CHECK_CUDA(cudaMalloc(&d_clustersMembershipCount, sizeof(size_t) * d_data.clustersCount));
         // We have separate clustersValues for each block
         CHECK_CUDA(cudaMalloc(&d_newClusters, sizeof(float) * d_data.clustersCount * DIM * newClustersBlocksCount));
         // We have separate clustersCount for each block
@@ -165,7 +176,7 @@ namespace KMeansClusteringGPUSM
             // TODO: do we need this?
             CHECK_CUDA(cudaDeviceSynchronize());
 
-            updateClusters<DIM><<<updateClustersBlocksCount, Consts::THREADS_PER_BLOCK>>>(d_data, d_newClusters, d_newClustersMembershipCount, newClustersBlocksCount);
+            updateClusters<DIM><<<updateClustersBlocksCount, Consts::THREADS_PER_BLOCK>>>(d_data, d_clustersMembershipCount, d_newClusters, d_newClustersMembershipCount, newClustersBlocksCount);
             CHECK_CUDA(cudaGetLastError());
             // if (!hasAnyChanged)
             // {
@@ -182,6 +193,7 @@ namespace KMeansClusteringGPUSM
         CHECK_CUDA(cudaMemcpy(membership.data(), d_memberships, sizeof(size_t) * d_data.pointsCount, cudaMemcpyDeviceToHost));
 
         cudaFree(d_memberships);
+        cudaFree(d_clustersMembershipCount);
         cudaFree(d_newClusters);
         cudaFree(d_newClustersMembershipCount);
         cudaFree(d_data.d_pointsValues);

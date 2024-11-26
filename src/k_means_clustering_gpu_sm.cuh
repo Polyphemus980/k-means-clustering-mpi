@@ -46,7 +46,10 @@ namespace KMeansClusteringGPUSM
     template <size_t DIM>
     __global__ void calculateMembershipAndNewClusters(KMeansData::KMeansDataGPU d_data, float *d_newClusters, uint32_t *d_newClustersMembershipCount, size_t *d_memberships /*, bool *hasAnyChanged*/)
     {
+        // FIXME: invlaid memory access, probalby with localThreadId
+
         auto threadId = blockDim.x * blockIdx.x + threadIdx.x;
+        auto localThreadId = threadIdx.x;
 
         extern __shared__ int sharedMemory[];
         float *s_clusters = (float *)sharedMemory;
@@ -58,15 +61,15 @@ namespace KMeansClusteringGPUSM
         // {
         //     s_hasChanged[0] = false;
         // }
-        if (threadId < d_data.clustersCount * DIM)
+        if (threadId < d_data.clustersCount * DIM * blockDim.x)
         {
-            s_clusters[threadId] = d_data.d_clustersValues[threadId];
-        }
-        if (threadId < d_data.clustersCount)
-        {
-            s_clustersMembershipCount[0] = 0;
+            s_clusters[localThreadId] = d_data.d_clustersValues[threadId];
         }
         return;
+        if (threadId < d_data.clustersCount * blockDim.x)
+        {
+            s_clustersMembershipCount[localThreadId] = 0;
+        }
 
         // Ensure shared memory is properly initialized
         __syncthreads();
@@ -90,18 +93,18 @@ namespace KMeansClusteringGPUSM
         // Finish all calculation made on shared memory
         __syncthreads();
 
-        if (threadId < d_data.clustersCount * DIM)
+        if (threadId < d_data.clustersCount * DIM * blockDim.x)
         {
             // if (threadId == 0)
             // {
             //     atomicOr(hasAnyChanged, s_hasChanged[0]);
             // }
-            d_newClusters[blockIdx.x * d_data.clustersCount + threadId] = s_clusters[threadId];
+            d_newClusters[threadId] = s_clusters[localThreadId];
         }
 
-        if (threadId < d_data.clustersCount)
+        if (threadId < d_data.clustersCount * blockDim.x)
         {
-            d_newClustersMembershipCount[blockIdx.x * d_data.clustersCount + threadId] = s_clustersMembershipCount[threadId];
+            d_newClustersMembershipCount[threadId] = s_clustersMembershipCount[localThreadId];
         }
     }
 

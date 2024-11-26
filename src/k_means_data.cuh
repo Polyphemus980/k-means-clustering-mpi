@@ -16,24 +16,18 @@ namespace KMeansData
         size_t clustersCount;
         float *d_pointsValues;
         float *d_clustersValues;
-
-        ~KMeansDataGPU()
-        {
-            cudaFree(d_pointsValues);
-            cudaFree(d_clustersValues);
-        }
     };
 
     template <size_t DIM>
     class Helpers
     {
     public:
-        __inline_hint__ static float GetCoord(const thrust::host_vector<float> &container, size_t elementsCount, size_t elementIndex, size_t coordIndex)
+        __inline__ static float GetCoord(const thrust::host_vector<float> &container, size_t elementsCount, size_t elementIndex, size_t coordIndex)
         {
             return container[coordIndex * elementsCount + elementIndex];
         }
 
-        __inline_hint__ __device__ static float GetCoord(const float *d_container, size_t elementsCount, size_t elementIndex, size_t coordIndex)
+        __inline__ __device__ static float GetCoord(const float *d_container, size_t elementsCount, size_t elementIndex, size_t coordIndex)
         {
             return d_container[coordIndex * elementsCount + elementIndex];
         }
@@ -79,12 +73,12 @@ namespace KMeansData
             return this->_clustersValues;
         }
 
-        float __inline_hint__ getPointCoord(size_t pointIndex, size_t coordIndex) const
+        __inline__ float getPointCoord(size_t pointIndex, size_t coordIndex) const
         {
             return Helpers<DIM>::GetCoord(this->_values, this->_pointsCount, pointIndex, coordIndex);
         }
 
-        float __inline_hint__ getClusterCoord(size_t clusterIndex, size_t coordIndex) const
+        __inline__ float getClusterCoord(size_t clusterIndex, size_t coordIndex) const
         {
             return Helpers<DIM>::GetCoord(this->_clustersValues, this->_clustersCount, clusterIndex, coordIndex);
         }

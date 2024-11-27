@@ -44,7 +44,7 @@ namespace KMeansClusteringGPUSM
     // Function for finding new membership for each point
     // Each thread should be responsible for single point
     template <size_t DIM>
-    __global__ void calculateMembershipAndNewClusters(KMeansData::KMeansDataGPU d_data, float *d_newClusters, uint32_t *d_newClustersMembershipCount, size_t *d_memberships /*, bool *hasAnyChanged*/)
+    __global__ void calculateMembershipAndNewClusters(KMeansData::KMeansDataGPU d_data, float *d_newClusters, uint32_t *d_newClustersMembershipCount, size_t *d_memberships, int *d_shouldContinue)
     {
         auto threadId = blockDim.x * blockIdx.x + threadIdx.x;
         auto localThreadId = threadIdx.x;
@@ -52,13 +52,13 @@ namespace KMeansClusteringGPUSM
         extern __shared__ int sharedMemory[];
         float *s_clusters = (float *)sharedMemory;
         uint32_t *s_clustersMembershipCount = (uint32_t *)&s_clusters[d_data.clustersCount * DIM];
+        int *s_shouldContinue = (int *)&s_clustersMembershipCount[d_data.clustersCount];
 
-        //  bool *s_hasChanged = reinterpret_cast<bool *>(&s_clustersMembershipCount[d_data.clustersCount * DIM]);
+        if (localThreadId == 0)
+        {
+            s_shouldContinue[0] = 0;
+        }
 
-        // if (threadId == 0)
-        // {
-        //     s_hasChanged[0] = false;
-        // }
         if (localThreadId < d_data.clustersCount * DIM)
         {
             s_clusters[localThreadId] = d_data.d_clustersValues[localThreadId];
@@ -82,7 +82,7 @@ namespace KMeansClusteringGPUSM
             auto previousClusterIndex = d_memberships[threadId];
             if (previousClusterIndex != nearestClusterIndex)
             {
-                // atomicOr(s_hasChanged, true);
+                atomicOr(&s_shouldContinue[0], 1);
                 d_memberships[threadId] = nearestClusterIndex;
             }
         }
@@ -90,12 +90,13 @@ namespace KMeansClusteringGPUSM
         // Finish all calculation made on shared memory
         __syncthreads();
 
+        if (localThreadId == 0)
+        {
+            d_shouldContinue[blockIdx.x] = s_shouldContinue[0];
+        }
+
         if (localThreadId < d_data.clustersCount * DIM)
         {
-            // if (threadId == 0)
-            // {
-            //     atomicOr(hasAnyChanged, s_hasChanged[0]);
-            // }
             d_newClusters[blockIdx.x * d_data.clustersCount * DIM + localThreadId] = s_clusters[localThreadId];
         }
 
@@ -116,7 +117,7 @@ namespace KMeansClusteringGPUSM
             d_clustersMembershipCount[threadId] = 0;
             for (size_t b = 0; b < previousBlocksCount; b++)
             {
-                d_clustersMembershipCount[threadId] += d_newClustersMembershipCount[d_data.clustersCount * b + threadId];
+                d_clustersMembershipCount[threadId] += (size_t)d_newClustersMembershipCount[d_data.clustersCount * b + threadId];
             }
         }
 
@@ -142,7 +143,7 @@ namespace KMeansClusteringGPUSM
 
         // FIXME: instead of pointsCount it should be max of pointsCount, dim * clustersCount * newClustersBlocksCount
         const uint32_t newClustersBlocksCount = ceil(d_data.pointsCount * 1.0 / Consts::THREADS_PER_BLOCK);
-        const size_t newClustersSharedMemorySize = d_data.clustersCount * DIM * sizeof(float) + d_data.clustersCount * sizeof(uint32_t);
+        const size_t newClustersSharedMemorySize = d_data.clustersCount * DIM * sizeof(float) + d_data.clustersCount * sizeof(uint32_t) + sizeof(int);
         const uint32_t updateClustersBlocksCount = ceil(d_data.clustersCount * DIM * 1.0 / Consts::THREADS_PER_BLOCK);
 
         cudaDeviceProp prop;
@@ -156,44 +157,61 @@ namespace KMeansClusteringGPUSM
         size_t *d_clustersMembershipCount;
         float *d_newClusters;
         uint32_t *d_newClustersMembershipCount;
+        int *d_shouldContinue;
         CHECK_CUDA(cudaMalloc(&d_memberships, sizeof(size_t) * d_data.pointsCount));
         CHECK_CUDA(cudaMalloc(&d_clustersMembershipCount, sizeof(size_t) * d_data.clustersCount));
         // We have separate clustersValues for each block
         CHECK_CUDA(cudaMalloc(&d_newClusters, sizeof(float) * d_data.clustersCount * DIM * newClustersBlocksCount));
         // We have separate clustersCount for each block
         CHECK_CUDA(cudaMalloc(&d_newClustersMembershipCount, sizeof(uint32_t) * d_data.clustersCount * newClustersBlocksCount));
+        CHECK_CUDA(cudaMalloc(&d_shouldContinue, sizeof(int) * newClustersBlocksCount));
         // We initialize the array that membership[i] = size_t::MAX
         CHECK_CUDA(cudaMemset(d_memberships, 0xFF, sizeof(size_t) * d_data.pointsCount));
 
+        int *shouldContinue = (int *)malloc(sizeof(int) * newClustersBlocksCount);
+        if (shouldContinue == nullptr)
+        {
+            throw std::runtime_error("Cannot allocate memory");
+        }
+
         for (size_t k = 0; k < Consts::MAX_ITERATION; k++)
         {
-            // bool hasAnyChanged = false;
             CHECK_CUDA(cudaMemset(d_newClusters, 0, sizeof(float) * d_data.clustersCount * DIM * newClustersBlocksCount));
             CHECK_CUDA(cudaMemset(d_newClustersMembershipCount, 0, sizeof(uint32_t) * d_data.clustersCount * newClustersBlocksCount));
+            CHECK_CUDA(cudaMemset(d_shouldContinue, 1, sizeof(int) * newClustersBlocksCount));
 
             // Kernel callls
-            calculateMembershipAndNewClusters<DIM><<<newClustersBlocksCount, Consts::THREADS_PER_BLOCK, newClustersSharedMemorySize>>>(d_data, d_newClusters, d_newClustersMembershipCount, d_memberships /*,&hasAnyChanged*/);
+            calculateMembershipAndNewClusters<DIM><<<newClustersBlocksCount, Consts::THREADS_PER_BLOCK, newClustersSharedMemorySize>>>(d_data, d_newClusters, d_newClustersMembershipCount, d_memberships, d_shouldContinue);
             CHECK_CUDA(cudaGetLastError());
 
             // TODO: do we need this?
             CHECK_CUDA(cudaDeviceSynchronize());
+
+            CHECK_CUDA(cudaMemcpy(shouldContinue, d_shouldContinue, sizeof(int), cudaMemcpyDeviceToHost));
+            bool totalShouldContinue = false;
+            for (size_t b = 0; b < newClustersBlocksCount; b++)
+            {
+                if (shouldContinue[b] != 0)
+                {
+                    totalShouldContinue = true;
+                    break;
+                }
+            }
+            // if (!totalShouldContinue)
+            // {
+            //     printf("BREAKING AT %ld iteration\n", k);
+            //     break;
+            // }
 
             updateClusters<DIM><<<updateClustersBlocksCount, Consts::THREADS_PER_BLOCK>>>(d_data, d_clustersMembershipCount, d_newClusters, d_newClustersMembershipCount, newClustersBlocksCount);
             CHECK_CUDA(cudaGetLastError());
 
             // TODO: do we need this?
             CHECK_CUDA(cudaDeviceSynchronize());
-
-            // if (!hasAnyChanged)
-            // {
-            //     break;
-            // }
         }
 
         thrust::host_vector<float> clustersValues(d_data.clustersCount * DIM);
         thrust::host_vector<size_t> membership(d_data.pointsCount);
-
-        CHECK_CUDA(cudaDeviceSynchronize());
 
         CHECK_CUDA(cudaMemcpy(clustersValues.data(), d_data.d_clustersValues, sizeof(float) * clustersValues.size(), cudaMemcpyDeviceToHost));
         CHECK_CUDA(cudaMemcpy(membership.data(), d_memberships, sizeof(size_t) * d_data.pointsCount, cudaMemcpyDeviceToHost));
@@ -202,8 +220,11 @@ namespace KMeansClusteringGPUSM
         cudaFree(d_clustersMembershipCount);
         cudaFree(d_newClusters);
         cudaFree(d_newClustersMembershipCount);
+        cudaFree(d_shouldContinue);
         cudaFree(d_data.d_pointsValues);
         cudaFree(d_data.d_clustersValues);
+
+        free(shouldContinue);
 
         return Utils::ClusteringResult{
             .clustersValues = clustersValues,

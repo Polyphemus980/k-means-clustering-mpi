@@ -77,8 +77,8 @@ namespace KMeansClusteringGPUSM
             for (size_t d = 0; d < DIM; d++)
             {
                 atomicAdd(&s_clusters[d * d_data.clustersCount + nearestClusterIndex], KMeansData::Helpers<DIM>::GetCoord(d_data.d_pointsValues, d_data.pointsCount, threadId, d));
-                atomicAdd(&s_clustersMembershipCount[nearestClusterIndex], 1);
             }
+            atomicAdd(&s_clustersMembershipCount[nearestClusterIndex], 1);
             auto previousClusterIndex = d_memberships[threadId];
             if (previousClusterIndex != nearestClusterIndex)
             {
@@ -90,18 +90,18 @@ namespace KMeansClusteringGPUSM
         // Finish all calculation made on shared memory
         __syncthreads();
 
-        if (threadId < d_data.clustersCount * DIM * blockDim.x && localThreadId < d_data.clustersCount * DIM)
+        if (localThreadId < d_data.clustersCount * DIM)
         {
             // if (threadId == 0)
             // {
             //     atomicOr(hasAnyChanged, s_hasChanged[0]);
             // }
-            d_newClusters[threadId] = s_clusters[localThreadId];
+            d_newClusters[blockIdx.x * d_data.clustersCount * DIM + localThreadId] = s_clusters[localThreadId];
         }
 
-        if (threadId < d_data.clustersCount * blockDim.x && localThreadId < d_data.clustersCount)
+        if (localThreadId < d_data.clustersCount)
         {
-            d_newClustersMembershipCount[threadId] = s_clustersMembershipCount[localThreadId];
+            d_newClustersMembershipCount[blockIdx.x * d_data.clustersCount + localThreadId] = s_clustersMembershipCount[localThreadId];
         }
     }
 
@@ -129,14 +129,16 @@ namespace KMeansClusteringGPUSM
                 d_data.d_clustersValues[threadId] += d_newClusters[d_data.clustersCount * DIM * b + threadId];
             }
             // Can we somehow remove this `%` operation? its probably slow
-            d_data.d_clustersValues[threadId] /= d_clustersMembershipCount[threadId % DIM];
+            size_t clusterId = threadId % d_data.clustersCount;
+            d_data.d_clustersValues[threadId] /= d_clustersMembershipCount[clusterId];
         }
     }
 
     template <size_t DIM>
     Utils::ClusteringResult kMeansClustering(KMeansData::KMeansDataGPU d_data)
     {
-        // FIXME: there is no runtime error but results are incorrect
+        // FIXME: results are mostly okay, but should be more correct
+        // currenlty CPU version is way better - why?
 
         // FIXME: instead of pointsCount it should be max of pointsCount, dim * clustersCount * newClustersBlocksCount
         const uint32_t newClustersBlocksCount = ceil(d_data.pointsCount * 1.0 / Consts::THREADS_PER_BLOCK);
@@ -178,6 +180,10 @@ namespace KMeansClusteringGPUSM
 
             updateClusters<DIM><<<updateClustersBlocksCount, Consts::THREADS_PER_BLOCK>>>(d_data, d_clustersMembershipCount, d_newClusters, d_newClustersMembershipCount, newClustersBlocksCount);
             CHECK_CUDA(cudaGetLastError());
+
+            // TODO: do we need this?
+            CHECK_CUDA(cudaDeviceSynchronize());
+
             // if (!hasAnyChanged)
             // {
             //     break;

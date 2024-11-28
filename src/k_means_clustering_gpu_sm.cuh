@@ -54,14 +54,14 @@ namespace KMeansClusteringGPUSM
         uint32_t *s_clustersMembershipCount = (uint32_t *)&s_clusters[d_data.clustersCount * DIM];
         int *s_shouldContinue = (int *)&s_clustersMembershipCount[d_data.clustersCount];
 
+        // Initialize shared memory in each block
         if (localThreadId == 0)
         {
             s_shouldContinue[0] = 0;
         }
-
         if (localThreadId < d_data.clustersCount * DIM)
         {
-            s_clusters[localThreadId] = d_data.d_clustersValues[localThreadId];
+            s_clusters[localThreadId] = 0;
         }
         if (localThreadId < d_data.clustersCount)
         {
@@ -71,6 +71,7 @@ namespace KMeansClusteringGPUSM
         // Ensure shared memory is properly initialized
         __syncthreads();
 
+        // For each point find its nearest cluster, update membership table and save results in shared memory
         if (threadId < d_data.pointsCount)
         {
             auto nearestClusterIndex = findNearestCluster<DIM>(d_data, threadId);
@@ -90,6 +91,7 @@ namespace KMeansClusteringGPUSM
         // Finish all calculation made on shared memory
         __syncthreads();
 
+        // Copy results from shared memory to global memory
         if (localThreadId == 0)
         {
             d_shouldContinue[blockIdx.x] = s_shouldContinue[0];
@@ -115,40 +117,43 @@ namespace KMeansClusteringGPUSM
         if (threadId < d_data.clustersCount)
         {
             d_clustersMembershipCount[threadId] = 0;
+            // For each cluster we calculate how many points belong to it accumulating results from all blocks
             for (size_t b = 0; b < previousBlocksCount; b++)
             {
-                d_clustersMembershipCount[threadId] += (size_t)d_newClustersMembershipCount[d_data.clustersCount * b + threadId];
+                d_clustersMembershipCount[threadId] += d_newClustersMembershipCount[d_data.clustersCount * b + threadId];
             }
         }
 
-        // FIXME: if this is needed we should probably split it into two kernels
+        // We can call it here, because we know that this kernel will always be launched in only one block
         __syncthreads();
 
         if (threadId < d_data.clustersCount * DIM)
         {
             d_data.d_clustersValues[threadId] = 0;
-            // We sum data from each block
+            // For each cluster dimension we accumulate results from all blocks
             for (size_t b = 0; b < previousBlocksCount; b++)
             {
                 d_data.d_clustersValues[threadId] += d_newClusters[d_data.clustersCount * DIM * b + threadId];
             }
             // Can we somehow remove this `%` operation? its probably slow
             size_t clusterId = threadId % d_data.clustersCount;
-            d_data.d_clustersValues[threadId] /= (float)d_clustersMembershipCount[clusterId];
+            // We divide by number of points in cluster to get mean
+            d_data.d_clustersValues[threadId] /= d_clustersMembershipCount[clusterId];
         }
     }
 
     template <size_t DIM>
     Utils::ClusteringResult kMeansClustering(KMeansData::KMeansDataGPU d_data)
     {
-        // FIXME: results are mostly okay, but should be more correct
-        // currenlty CPU version is way better - why?
-
-        // FIXME: instead of pointsCount it should be max of pointsCount, dim * clustersCount * newClustersBlocksCount
+        // PointsCount is always greater than dim * clustersCount * newClustersBlockCount (~ 20 * 20 * 1000 = 400 000 << 1 000 000 )
         const uint32_t newClustersBlocksCount = ceil(d_data.pointsCount * 1.0 / Consts::THREADS_PER_BLOCK);
         const size_t newClustersSharedMemorySize = d_data.clustersCount * DIM * sizeof(float) + d_data.clustersCount * sizeof(uint32_t) + sizeof(int);
-        const uint32_t updateClustersBlocksCount = ceil(d_data.clustersCount * DIM * 1.0 / Consts::THREADS_PER_BLOCK);
 
+        // We want to have clustersCount * DIM threads
+        // We know in worst case scenario it's 20 * 20 = 400 < 1024, so it's always gonna fit in one block
+        const uint32_t updateClustersBlocksCount = 1;
+
+        // Check if device has enough memory for our shared memory size
         cudaDeviceProp prop;
         cudaGetDeviceProperties(&prop, 0);
         if (newClustersSharedMemorySize > prop.sharedMemPerBlock)
@@ -156,36 +161,41 @@ namespace KMeansClusteringGPUSM
             throw std::runtime_error("Required shared memory exceeds device limits");
         }
 
+        // GPU allocations
         size_t *d_memberships;
-        size_t *d_clustersMembershipCount;
-        float *d_newClusters;
-        uint32_t *d_newClustersMembershipCount;
-        int *d_shouldContinue;
         CHECK_CUDA(cudaMalloc(&d_memberships, sizeof(size_t) * d_data.pointsCount));
-        CHECK_CUDA(cudaMalloc(&d_clustersMembershipCount, sizeof(size_t) * d_data.clustersCount));
-        // We have separate clustersValues for each block
-        CHECK_CUDA(cudaMalloc(&d_newClusters, sizeof(float) * d_data.clustersCount * DIM * newClustersBlocksCount));
-        // We have separate clustersCount for each block
-        CHECK_CUDA(cudaMalloc(&d_newClustersMembershipCount, sizeof(uint32_t) * d_data.clustersCount * newClustersBlocksCount));
-        CHECK_CUDA(cudaMalloc(&d_shouldContinue, sizeof(int) * newClustersBlocksCount));
         // We initialize the array that membership[i] = size_t::MAX
         CHECK_CUDA(cudaMemset(d_memberships, 0xFF, sizeof(size_t) * d_data.pointsCount));
 
+        size_t *d_clustersMembershipCount;
+        CHECK_CUDA(cudaMalloc(&d_clustersMembershipCount, sizeof(size_t) * d_data.clustersCount));
+
+        float *d_newClusters;
+        // We have separate clustersValues for each block
+        CHECK_CUDA(cudaMalloc(&d_newClusters, sizeof(float) * d_data.clustersCount * DIM * newClustersBlocksCount));
+
+        uint32_t *d_newClustersMembershipCount;
+        // We have separate clustersCount for each block
+        CHECK_CUDA(cudaMalloc(&d_newClustersMembershipCount, sizeof(uint32_t) * d_data.clustersCount * newClustersBlocksCount));
+
+        int *d_shouldContinue;
+        CHECK_CUDA(cudaMalloc(&d_shouldContinue, sizeof(int) * newClustersBlocksCount));
+
+        // CPU allocation
         int *shouldContinue = (int *)malloc(sizeof(int) * newClustersBlocksCount);
         if (shouldContinue == nullptr)
         {
             throw std::runtime_error("Cannot allocate memory");
         }
 
+        // We don't need to call cudaDeviceSynchronzie because we use single device and we don't use cuda streams
         for (size_t k = 0; k < Consts::MAX_ITERATION; k++)
         {
-            // Kernel callls
+            // Call to first kernel
             calculateMembershipAndNewClusters<DIM><<<newClustersBlocksCount, Consts::THREADS_PER_BLOCK, newClustersSharedMemorySize>>>(d_data, d_newClusters, d_newClustersMembershipCount, d_memberships, d_shouldContinue);
             CHECK_CUDA(cudaGetLastError());
 
-            // TODO: do we need this?
-            CHECK_CUDA(cudaDeviceSynchronize());
-
+            // If all blocks return false than we know that no change was made and we can break from loop
             CHECK_CUDA(cudaMemcpy(shouldContinue, d_shouldContinue, sizeof(int) * newClustersBlocksCount, cudaMemcpyDeviceToHost));
             bool totalShouldContinue = false;
             for (size_t b = 0; b < newClustersBlocksCount; b++)
@@ -198,23 +208,26 @@ namespace KMeansClusteringGPUSM
             }
             if (!totalShouldContinue)
             {
-                printf("GPU BREAKING AT %ld iteration\n", k);
                 break;
             }
 
+            // Call to second kernel
             updateClusters<DIM><<<updateClustersBlocksCount, Consts::THREADS_PER_BLOCK>>>(d_data, d_clustersMembershipCount, d_newClusters, d_newClustersMembershipCount, newClustersBlocksCount);
             CHECK_CUDA(cudaGetLastError());
-
-            // TODO: do we need this?
-            CHECK_CUDA(cudaDeviceSynchronize());
         }
 
+        // Prepare memory for storing results on CPU side
         thrust::host_vector<float> clustersValues(d_data.clustersCount * DIM);
         thrust::host_vector<size_t> membership(d_data.pointsCount);
 
+        // Wait for GPU to finish calculations
+        CHECK_CUDA(cudaDeviceSynchronize());
+
+        // Copy result from GPU to CPU
         CHECK_CUDA(cudaMemcpy(clustersValues.data(), d_data.d_clustersValues, sizeof(float) * clustersValues.size(), cudaMemcpyDeviceToHost));
         CHECK_CUDA(cudaMemcpy(membership.data(), d_memberships, sizeof(size_t) * d_data.pointsCount, cudaMemcpyDeviceToHost));
 
+        // GPU deallocations
         cudaFree(d_memberships);
         cudaFree(d_clustersMembershipCount);
         cudaFree(d_newClusters);
@@ -223,6 +236,7 @@ namespace KMeansClusteringGPUSM
         cudaFree(d_data.d_pointsValues);
         cudaFree(d_data.d_clustersValues);
 
+        // CPU deallocation
         free(shouldContinue);
 
         return Utils::ClusteringResult{

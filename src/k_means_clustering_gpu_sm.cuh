@@ -2,7 +2,6 @@
 #define K_MEANS_CLUSTERING_GPU_SM
 
 #include <thrust/host_vector.h>
-#include <cmath>
 #include <cstdint>
 
 #include "k_means_data.cuh"
@@ -12,7 +11,7 @@
 namespace KMeansClusteringGPUSM
 {
     template <size_t DIM>
-    __device__ float pointToClusterDistance(KMeansData::KMeansDataGPU d_data, size_t pointIndex, size_t clusterIndex)
+    __device__ float pointToClusterDistanceSquared(KMeansData::KMeansDataGPU d_data, size_t pointIndex, size_t clusterIndex)
     {
         float distance = 0;
         for (size_t d = 0; d < DIM; d++)
@@ -21,20 +20,21 @@ namespace KMeansClusteringGPUSM
 
             distance += diff * diff;
         }
-        return sqrt(distance);
+        return distance;
     }
 
     template <size_t DIM>
     __device__ size_t findNearestCluster(KMeansData::KMeansDataGPU d_data, size_t pointIndex)
     {
-        float minDist = pointToClusterDistance<DIM>(d_data, pointIndex, 0);
+        float minDist = pointToClusterDistanceSquared<DIM>(d_data, pointIndex, 0);
         size_t minDistIndex = 0;
         for (size_t j = 1; j < d_data.clustersCount; j++)
         {
-            float dist = pointToClusterDistance<DIM>(d_data, pointIndex, j);
-            if (dist < minDist)
+            float distSquared = pointToClusterDistanceSquared<DIM>(d_data, pointIndex, j);
+
+            if (distSquared < minDist)
             {
-                minDist = dist;
+                minDist = distSquared;
                 minDistIndex = j;
             }
         }

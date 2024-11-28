@@ -18,7 +18,7 @@ namespace KMeansClusteringCPU
         float distance = 0;
         for (size_t d = 0; d < DIM; d++)
         {
-            float diff = KMeansData::Helpers<DIM>::GetCoord(points, pointsCount, pointIndex, d) - KMeansData::Helpers<DIM>::GetCoord(clusters, clustersCount, clusterIndex, d);
+            float diff = KMeansData::Helpers::GetCoord(points, pointsCount, pointIndex, d) - KMeansData::Helpers::GetCoord(clusters, clustersCount, clusterIndex, d);
             distance += diff * diff;
         }
         return sqrt(distance);
@@ -46,7 +46,7 @@ namespace KMeansClusteringCPU
     {
         for (size_t d = 0; d < DIM; d++)
         {
-            newClusters[d * clustersCount + clusterIndex] += KMeansData::Helpers<DIM>::GetCoord(points, pointsCount, pointIndex, d);
+            newClusters[d * clustersCount + clusterIndex] += KMeansData::Helpers::GetCoord(points, pointsCount, pointIndex, d);
         }
         newClustersSize[clusterIndex]++;
     }
@@ -58,7 +58,7 @@ namespace KMeansClusteringCPU
         {
             for (size_t j = 0; j < clustersCount; j++)
             {
-                clusters[d * clustersCount + j] = KMeansData::Helpers<DIM>::GetCoord(newClusters, clustersCount, j, d) / newClustersSize[j];
+                clusters[d * clustersCount + j] = KMeansData::Helpers::GetCoord(newClusters, clustersCount, j, d) / newClustersSize[j];
             }
         }
     }

@@ -18,8 +18,6 @@ namespace KMeansData
         float *d_clustersValues;
     };
 
-    // FIXME: this template can be removed
-    template <size_t DIM>
     class Helpers
     {
     public:
@@ -76,12 +74,12 @@ namespace KMeansData
 
         __inline__ float getPointCoord(size_t pointIndex, size_t coordIndex) const
         {
-            return Helpers<DIM>::GetCoord(this->_values, this->_pointsCount, pointIndex, coordIndex);
+            return Helpers::GetCoord(this->_values, this->_pointsCount, pointIndex, coordIndex);
         }
 
         __inline__ float getClusterCoord(size_t clusterIndex, size_t coordIndex) const
         {
-            return Helpers<DIM>::GetCoord(this->_clustersValues, this->_clustersCount, clusterIndex, coordIndex);
+            return Helpers::GetCoord(this->_clustersValues, this->_clustersCount, clusterIndex, coordIndex);
         }
 
         KMeansDataGPU transformToGPURepresentation() const

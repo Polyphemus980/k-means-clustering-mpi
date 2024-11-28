@@ -16,7 +16,7 @@ namespace KMeansClusteringGPUSM
         float distance = 0;
         for (size_t d = 0; d < DIM; d++)
         {
-            float diff = KMeansData::Helpers<DIM>::GetCoord(d_data.d_pointsValues, d_data.pointsCount, pointIndex, d) - KMeansData::Helpers<DIM>::GetCoord(d_data.d_clustersValues, d_data.clustersCount, clusterIndex, d);
+            float diff = KMeansData::Helpers::GetCoord(d_data.d_pointsValues, d_data.pointsCount, pointIndex, d) - KMeansData::Helpers::GetCoord(d_data.d_clustersValues, d_data.clustersCount, clusterIndex, d);
 
             distance += diff * diff;
         }
@@ -77,7 +77,7 @@ namespace KMeansClusteringGPUSM
             auto nearestClusterIndex = findNearestCluster<DIM>(d_data, threadId);
             for (size_t d = 0; d < DIM; d++)
             {
-                atomicAdd(&s_clusters[d * d_data.clustersCount + nearestClusterIndex], KMeansData::Helpers<DIM>::GetCoord(d_data.d_pointsValues, d_data.pointsCount, threadId, d));
+                atomicAdd(&s_clusters[d * d_data.clustersCount + nearestClusterIndex], KMeansData::Helpers::GetCoord(d_data.d_pointsValues, d_data.pointsCount, threadId, d));
             }
             atomicAdd(&s_clustersMembershipCount[nearestClusterIndex], 1);
             auto previousClusterIndex = d_memberships[threadId];

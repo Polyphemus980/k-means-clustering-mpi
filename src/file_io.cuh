@@ -97,7 +97,7 @@ namespace FileIO
         {
             for (size_t d = 0; d < DIM; d++)
             {
-                auto value = KMeansData::Helpers<DIM>::GetCoord(results.clustersValues, clustersCount, j, d);
+                auto value = KMeansData::Helpers::GetCoord(results.clustersValues, clustersCount, j, d);
                 if (d == DIM - 1)
                 {
                     fprintf(file, "%f", value);

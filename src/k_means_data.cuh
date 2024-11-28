@@ -18,6 +18,7 @@ namespace KMeansData
         float *d_clustersValues;
     };
 
+    // FIXME: this template can be removed
     template <size_t DIM>
     class Helpers
     {

@@ -90,12 +90,14 @@ namespace KMeansClusteringCPU
                 }
                 updateNewCluster<DIM>(points, pointsCount, i, newClusters, newClustersSize, clustersCount, membership[i]);
             }
+            if (!has_change)
+            {
+                break;
+            }
             for (size_t j = 0; j < clustersCount; j++)
             {
                 updateCluster<DIM>(clusters, newClusters, newClustersSize, clustersCount, j);
             }
-            if (!has_change)
-                break;
         }
         return Utils::ClusteringResult{
             .clustersValues = clusters,

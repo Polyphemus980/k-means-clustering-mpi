@@ -121,6 +121,9 @@ namespace KMeansClusteringGPUSM
             }
         }
 
+        // FIXME: if this is needed we should probably split it into two kernels
+        __syncthreads();
+
         if (threadId < d_data.clustersCount * DIM)
         {
             d_data.d_clustersValues[threadId] = 0;
@@ -131,7 +134,7 @@ namespace KMeansClusteringGPUSM
             }
             // Can we somehow remove this `%` operation? its probably slow
             size_t clusterId = threadId % d_data.clustersCount;
-            d_data.d_clustersValues[threadId] /= d_clustersMembershipCount[clusterId];
+            d_data.d_clustersValues[threadId] /= (float)d_clustersMembershipCount[clusterId];
         }
     }
 
@@ -176,10 +179,6 @@ namespace KMeansClusteringGPUSM
 
         for (size_t k = 0; k < Consts::MAX_ITERATION; k++)
         {
-            CHECK_CUDA(cudaMemset(d_newClusters, 0, sizeof(float) * d_data.clustersCount * DIM * newClustersBlocksCount));
-            CHECK_CUDA(cudaMemset(d_newClustersMembershipCount, 0, sizeof(uint32_t) * d_data.clustersCount * newClustersBlocksCount));
-            CHECK_CUDA(cudaMemset(d_shouldContinue, 1, sizeof(int) * newClustersBlocksCount));
-
             // Kernel callls
             calculateMembershipAndNewClusters<DIM><<<newClustersBlocksCount, Consts::THREADS_PER_BLOCK, newClustersSharedMemorySize>>>(d_data, d_newClusters, d_newClustersMembershipCount, d_memberships, d_shouldContinue);
             CHECK_CUDA(cudaGetLastError());
@@ -187,7 +186,7 @@ namespace KMeansClusteringGPUSM
             // TODO: do we need this?
             CHECK_CUDA(cudaDeviceSynchronize());
 
-            CHECK_CUDA(cudaMemcpy(shouldContinue, d_shouldContinue, sizeof(int), cudaMemcpyDeviceToHost));
+            CHECK_CUDA(cudaMemcpy(shouldContinue, d_shouldContinue, sizeof(int) * newClustersBlocksCount, cudaMemcpyDeviceToHost));
             bool totalShouldContinue = false;
             for (size_t b = 0; b < newClustersBlocksCount; b++)
             {
@@ -197,11 +196,11 @@ namespace KMeansClusteringGPUSM
                     break;
                 }
             }
-            // if (!totalShouldContinue)
-            // {
-            //     printf("BREAKING AT %ld iteration\n", k);
-            //     break;
-            // }
+            if (!totalShouldContinue)
+            {
+                printf("GPU BREAKING AT %ld iteration\n", k);
+                break;
+            }
 
             updateClusters<DIM><<<updateClustersBlocksCount, Consts::THREADS_PER_BLOCK>>>(d_data, d_clustersMembershipCount, d_newClusters, d_newClustersMembershipCount, newClustersBlocksCount);
             CHECK_CUDA(cudaGetLastError());

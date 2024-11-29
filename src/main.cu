@@ -1,4 +1,4 @@
-#include <iostream>
+#include <cstdio>
 #include <cuda_runtime.h>
 #include <exception>
 #include <cstring>
@@ -49,7 +49,7 @@ int main(int argc, char **argv)
 {
     if (argc != 5)
     {
-        std::cout << "Invalid arguments count\n";
+        fprintf(stderr, "Invalid arguments count\n");
         Utils::usage(argv[0]);
     }
 
@@ -64,7 +64,8 @@ int main(int argc, char **argv)
     }
     else
     {
-        std::cout << "Invalid file type\n";
+        fprintf(stderr, "Invalid file type\n");
+
         Utils::usage(argv[0]);
     }
 
@@ -83,7 +84,7 @@ int main(int argc, char **argv)
     }
     else
     {
-        std::cout << "Invalid algorithm mode\n";
+        fprintf(stderr, "Invalid algorithm mode\n");
         Utils::usage(argv[0]);
     }
 

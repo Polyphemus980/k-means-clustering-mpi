@@ -5,9 +5,11 @@
 #include <cstdint>
 #include <string>
 
+#include "base_timer.cuh"
+
 namespace CpuTimer
 {
-    class Timer
+    class Timer : BaseTimer::Timer
     {
     private:
         std::chrono::high_resolution_clock::time_point _start{};
@@ -17,7 +19,6 @@ namespace CpuTimer
     public:
         void start();
         void end();
-        int64_t timeInMS();
         void printResult(const char *s);
     };
 }

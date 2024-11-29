@@ -16,13 +16,8 @@ namespace CpuTimer
         this->_timeInMS = duration.count();
     }
 
-    int64_t Timer::timeInMS()
-    {
-        return this->_timeInMS;
-    }
-
     void Timer::printResult(const char *s)
     {
-        printf("[CPU] Step: \"%s\", Time: %ld ms\n", s, this->timeInMS());
+        printf("[CPU] Step: \"%s\", Time: %ld ms\n", s, this->_timeInMS);
     }
 }

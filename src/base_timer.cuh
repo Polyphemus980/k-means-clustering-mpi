@@ -10,6 +10,6 @@ namespace BaseTimer
         void virtual end() = 0;
         void virtual printResult(const char *s) = 0;
     };
-}
+} // BaseTimer
 
 #endif // BASE_TIMER_H

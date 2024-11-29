@@ -20,4 +20,4 @@ namespace CpuTimer
     {
         printf("[CPU] Step: \"%s\", Time: %ld ms\n", s, this->_timeInMS);
     }
-}
+} // CpuTimer

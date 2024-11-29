@@ -21,6 +21,6 @@ namespace CpuTimer
         void end();
         void printResult(const char *s);
     };
-}
+} // CpuTimer
 
 #endif // CPU_TIMER_H

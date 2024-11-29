@@ -1,29 +1,45 @@
-CC=nvcc
-# this g++-9 and -arch=sm_35 is only for it to work on university machine (GPUNODE2)
-# the last flag disables warning error (it seems like sm_35 is deprecated)
-C_FLAGS_NODE2=-ccbin /usr/bin/g++-9 -arch=sm_35 -Wno-deprecated-gpu-targets
-C_FLAGS_NODE3=--std=c++20
-C_FLAGS_NODE3_OPTIMIZED=--std=c++20 -O3
-SRC=src/main.cu src/utils.cu src/file_io.cu
-TARGET=KMeans
-TARGET_NODE2=${TARGET}-NODE2
-TARGET_NODE3=${TARGET}-NODE3
-TARGET_NODE3_OPT=${TARGET_NODE3}_OPT
+MAKEFLAGS += --jobs=$(shell nproc)
+CC := nvcc
 
-node2: ${TARGET_NODE2}
-node3: ${TARGET_NODE3}
-node3_opt: ${TARGET_NODE3_OPT}
+# Compiler flags for different nodes
+C_FLAGS_NODE2 := -ccbin /usr/bin/g++-9 -arch=sm_35 -Wno-deprecated-gpu-targets
+C_FLAGS_NODE3 := --std=c++20
+C_FLAGS_NODE3_OPTIMIZED := --std=c++20 -O3
 
-${TARGET_NODE2}:
-	${CC} ${C_FLAGS_NODE2} -o ${TARGET} ${SRC}
+# Directory structure
+SRC_DIR := src
+OBJ_DIR := obj
+TARGET := KMeans
 
-${TARGET_NODE3}:
-	${CC} ${C_FLAGS_NODE3} -o ${TARGET} ${SRC}
+# Find all source files
+SRCS := $(wildcard $(SRC_DIR)/*.cu)
+# Generate corresponding object file names
+OBJS := $(SRCS:$(SRC_DIR)/%.cu=$(OBJ_DIR)/%.o)
 
-${TARGET_NODE3_OPT}:
-	${CC} ${C_FLAGS_NODE3_OPTIMIZED} -o ${TARGET} ${SRC}
+# Create object directory
+$(OBJ_DIR):
+	mkdir -p $@
+
+# Compile each source file into an object file
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cu | $(OBJ_DIR)
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# Link all object files into final executable
+$(TARGET): $(OBJS)
+	$(CC) $(CFLAGS) $^ -o $@
+
+# Phony targets
+.PHONY: clean node2 node3 node3_opt
+
+# Different build configurations
+node2: CFLAGS = $(C_FLAGS_NODE2)
+node2: $(TARGET)
+
+node3: CFLAGS = $(C_FLAGS_NODE3)
+node3: $(TARGET)
+
+node3_opt: CFLAGS = $(C_FLAGS_NODE3_OPTIMIZED)
+node3_opt: $(TARGET)
 
 clean:
-	rm -f ${TARGET}
-
-.PHONY: clean
+	rm -rf $(OBJ_DIR) $(TARGET)

@@ -7,6 +7,8 @@
 #include "k_means_data.cuh"
 #include "utils.cuh"
 #include "consts.cuh"
+#include "cpu_timer.cuh"
+#include "gpu_timer.cuh"
 
 namespace KMeansClusteringGPUSM
 {
@@ -145,6 +147,9 @@ namespace KMeansClusteringGPUSM
     template <size_t DIM>
     Utils::ClusteringResult kMeansClustering(KMeansData::KMeansDataGPU d_data)
     {
+        CpuTimer::Timer cpuTimer;
+        GpuTimer::Timer gpuTimer;
+
         // PointsCount is always greater than dim * clustersCount * newClustersBlockCount (~ 20 * 20 * 1000 = 400 000 << 1 000 000 )
         const uint32_t newClustersBlocksCount = ceil(d_data.pointsCount * 1.0 / Consts::THREADS_PER_BLOCK);
         const size_t newClustersSharedMemorySize = d_data.clustersCount * DIM * sizeof(float) + d_data.clustersCount * sizeof(uint32_t) + sizeof(int);
@@ -188,6 +193,7 @@ namespace KMeansClusteringGPUSM
             throw std::runtime_error("Cannot allocate memory");
         }
 
+        gpuTimer.start();
         // We don't need to call cudaDeviceSynchronzie because we use single device and we don't use cuda streams
         for (size_t k = 0; k < Consts::MAX_ITERATION; k++)
         {
@@ -215,6 +221,8 @@ namespace KMeansClusteringGPUSM
             updateClusters<DIM><<<updateClustersBlocksCount, Consts::THREADS_PER_BLOCK>>>(d_data, d_clustersMembershipCount, d_newClusters, d_newClustersMembershipCount, newClustersBlocksCount);
             CHECK_CUDA(cudaGetLastError());
         }
+        gpuTimer.end();
+        gpuTimer.printResult("K-means clustering (main algorithm)");
 
         // Prepare memory for storing results on CPU side
         thrust::host_vector<float> clustersValues(d_data.clustersCount * DIM);
@@ -224,8 +232,11 @@ namespace KMeansClusteringGPUSM
         CHECK_CUDA(cudaDeviceSynchronize());
 
         // Copy result from GPU to CPU
+        cpuTimer.start();
         CHECK_CUDA(cudaMemcpy(clustersValues.data(), d_data.d_clustersValues, sizeof(float) * clustersValues.size(), cudaMemcpyDeviceToHost));
         CHECK_CUDA(cudaMemcpy(membership.data(), d_memberships, sizeof(size_t) * d_data.pointsCount, cudaMemcpyDeviceToHost));
+        cpuTimer.end();
+        cpuTimer.printResult("Copy data from GPU to CPU");
 
         // GPU deallocations
         cudaFree(d_memberships);

@@ -8,6 +8,9 @@
 #include <fstream>
 #include <exception>
 
+#include "cpu_timer.cuh"
+#include "utils.cuh"
+
 namespace KMeansData
 {
     struct KMeansDataGPU
@@ -84,13 +87,20 @@ namespace KMeansData
 
         KMeansDataGPU transformToGPURepresentation() const
         {
-            // TODO: handle cuda errors
+            CpuTimer::Timer cpuTimer;
             float *d_pointsValues;
             float *d_clustersValues;
-            cudaMalloc(&d_pointsValues, sizeof(float) * _values.size());
-            cudaMalloc(&d_clustersValues, sizeof(float) * _clustersValues.size());
-            cudaMemcpy(d_pointsValues, _values.data(), sizeof(float) * _values.size(), cudaMemcpyHostToDevice);
-            cudaMemcpy(d_clustersValues, _clustersValues.data(), sizeof(float) * _clustersValues.size(), cudaMemcpyHostToDevice);
+            CHECK_CUDA(cudaMalloc(&d_pointsValues, sizeof(float) * _values.size()));
+            CHECK_CUDA(cudaMalloc(&d_clustersValues, sizeof(float) * _clustersValues.size()));
+
+            cpuTimer.start();
+
+            CHECK_CUDA(cudaMemcpy(d_pointsValues, _values.data(), sizeof(float) * _values.size(), cudaMemcpyHostToDevice));
+            CHECK_CUDA(cudaMemcpy(d_clustersValues, _clustersValues.data(), sizeof(float) * _clustersValues.size(), cudaMemcpyHostToDevice));
+
+            cpuTimer.end();
+            cpuTimer.printResult("Copy data from CPU to GPU");
+
             return KMeansDataGPU{
                 .pointsCount = _pointsCount,
                 .clustersCount = _clustersCount,

@@ -16,6 +16,7 @@
 template <size_t DIM>
 void start(FILE *inputFile, size_t pointsCount, size_t clustersCount, Utils::ProgramArgs &programArgs)
 {
+    // TODO: remote this timer from here and put it inside functions
     CpuTimer::Timer cpuTimer;
     KMeansData::KMeansData<DIM> h_kMeansData;
     switch (programArgs.inputFileType)

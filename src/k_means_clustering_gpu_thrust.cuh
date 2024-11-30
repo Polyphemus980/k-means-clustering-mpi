@@ -104,18 +104,18 @@ namespace KMeansClusteringGPUThrust
                 clustersSumsInDimension.begin());
 
             // // Calculate means
-            // FIXME: there is illegal memory access error in this code
-            // auto clustersDimensionStart = data.clustersValues.begin() + d * data.clustersCount;
-            // thrust::transform(
-            //     clustersSumsInDimension.begin(),
-            //     clustersSumsInDimension.end(),
-            //     thrust::make_transform_iterator(clustersMembershipsCount.begin(), [] __host__ __device__(size_t count)
-            //                                     { return count > 0 ? 1.0f / count : 0.0f; }),
-            //     clustersDimensionStart,
-            //     thrust::multiplies<float>());
+            auto clustersDimensionStart = data.clustersValues.begin() + d * data.clustersCount;
+            thrust::transform(
+                clustersSumsInDimension.begin(),
+                clustersSumsInDimension.begin() + data.clustersCount,
+                thrust::make_transform_iterator(clustersMembershipsCount.begin(), [] __host__ __device__(size_t count)
+                                                { return count > 0 ? 1.0f / count : 0.0f; }),
+                clustersDimensionStart,
+                thrust::multiplies<float>());
         }
     }
 
+    // FIXME: the resulsts are incorrect
     template <size_t DIM>
     Utils::ClusteringResult kMeansClustering(KMeansData::KMeansDataGPUThrust data)
     {

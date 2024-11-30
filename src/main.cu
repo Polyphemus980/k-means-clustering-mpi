@@ -8,6 +8,7 @@
 #include "k_means_data.cuh"
 #include "k_means_clustering_cpu.cuh"
 #include "k_means_clustering_gpu_sm.cuh"
+#include "k_means_clustering_gpu_thrust.cuh"
 #include "cpu_timer.cuh"
 
 // This function is an actual entry point
@@ -49,6 +50,9 @@ void start(FILE *inputFile, size_t pointsCount, size_t clustersCount, Utils::Pro
         break;
     case Utils::AlgorithmMode::GPU_FIRST:
         result = KMeansClusteringGPUSM::kMeansClustering<DIM>(h_kMeansData.transformToGPURepresentation());
+        break;
+    case Utils::AlgorithmMode::GPU_SECOND:
+        result = KMeansClusteringGPUThrust::kMeansClustering<DIM>(h_kMeansData.transformToGPUThrustRepresentation());
         break;
     default:
         throw std::runtime_error("UNREACHABLE");

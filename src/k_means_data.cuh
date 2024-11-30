@@ -3,6 +3,7 @@
 
 #include <cstdio>
 #include <thrust/host_vector.h>
+#include <thrust/device_vector.h>
 #include <string>
 #include <sstream>
 #include <fstream>
@@ -19,6 +20,14 @@ namespace KMeansData
         size_t clustersCount;
         float *d_pointsValues;
         float *d_clustersValues;
+    };
+
+    struct KMeansDataGPUThrust
+    {
+        size_t pointsCount;
+        size_t clustersCount;
+        thrust::device_vector<float> pointsValues;
+        thrust::device_vector<float> clustersValues;
     };
 
     class Helpers
@@ -106,6 +115,18 @@ namespace KMeansData
                 .clustersCount = _clustersCount,
                 .d_pointsValues = d_pointsValues,
                 .d_clustersValues = d_clustersValues,
+            };
+        }
+
+        KMeansDataGPUThrust transformToGPUThrustRepresentation() const
+        {
+            thrust::device_vector<float> pointsValues(this->_values);
+            thrust::device_vector<float> clustersValues(this->_clustersValues);
+            return KMeansDataGPUThrust{
+                .pointsCount = this->_pointsCount,
+                .clustersCount = this->_clustersCount,
+                .pointsValues = pointsValues,
+                .clustersValues = clustersValues,
             };
         }
     };

@@ -2,9 +2,9 @@ MAKEFLAGS += --jobs=$(shell nproc)
 CC := nvcc
 
 # Compiler flags for different nodes
-C_FLAGS_NODE2 := -ccbin /usr/bin/g++-9 -arch=sm_35 -Wno-deprecated-gpu-targets
-C_FLAGS_NODE3 := --std=c++20
-C_FLAGS_NODE3_OPTIMIZED := --std=c++20 -O3
+C_FLAGS_NODE2 := -ccbin /usr/bin/g++-9 -arch=sm_35 -Wno-deprecated-gpu-targets --extended-lambda
+C_FLAGS_NODE3 := --std=c++20 --extended-lambda
+C_FLAGS_NODE3_OPTIMIZED := --std=c++20 -O3 --extended-lambda
 
 # Directory structure
 SRC_DIR := src

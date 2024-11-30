@@ -11,6 +11,7 @@
 #include "utils.cuh"
 #include "k_means_data.cuh"
 #include "consts.cuh"
+#include "cpu_timer.cuh"
 
 namespace KMeansClusteringGPUThrust
 {
@@ -26,6 +27,49 @@ namespace KMeansClusteringGPUThrust
         return distance;
     }
 
+    template <size_t DIM>
+    struct FindClusterFunctor
+    {
+        const float *d_pointsValues;
+        const float *d_clustersValues;
+        size_t *d_memberships;
+        size_t pointsCount;
+        size_t clustersCount;
+
+        __host__ __device__ FindClusterFunctor(
+            const float *pointsValues,
+            const float *clustersValues,
+            size_t *memberships,
+            size_t pointsCount,
+            size_t clustersCount)
+            : d_pointsValues(pointsValues),
+              d_clustersValues(clustersValues),
+              d_memberships(memberships),
+              pointsCount(pointsCount),
+              clustersCount(clustersCount) {}
+
+        __host__ __device__ size_t operator()(size_t pointIndex) const
+        {
+            float minDistance = pointToClusterDistanceSquared<DIM>(d_pointsValues, pointsCount, pointIndex, d_clustersValues, clustersCount, 0);
+            size_t minDistanceIndex = 0;
+
+            for (size_t j = 1; j < clustersCount; j++)
+            {
+                float dist = pointToClusterDistanceSquared<DIM>(d_pointsValues, pointsCount, pointIndex, d_clustersValues, clustersCount, j);
+                if (dist < minDistance)
+                {
+                    minDistance = dist;
+                    minDistanceIndex = j;
+                }
+            }
+
+            size_t previousCluster = d_memberships[pointIndex];
+            d_memberships[pointIndex] = minDistanceIndex;
+
+            return (minDistanceIndex != previousCluster ? 1 : 0);
+        }
+    };
+
     // Returns number of points that changed their membership
     template <size_t DIM>
     size_t findClustersForPoints(const KMeansData::KMeansDataGPUThrust &data, thrust::device_vector<size_t> &memberships)
@@ -34,26 +78,18 @@ namespace KMeansClusteringGPUThrust
         const float *d_clustersValues = thrust::raw_pointer_cast(data.clustersValues.data());
         size_t *d_memberships = thrust::raw_pointer_cast(memberships.data());
 
+        FindClusterFunctor<DIM> findClusterFunctor(
+            d_pointsValues,
+            d_clustersValues,
+            d_memberships,
+            data.pointsCount,
+            data.clustersCount);
+
         size_t changedPointsCount = thrust::transform_reduce(
+            thrust::device,
             thrust::counting_iterator<size_t>(0),
             thrust::counting_iterator<size_t>(data.pointsCount),
-            [=] __host__ __device__(size_t pointIndex)
-            {
-                float minDistance = pointToClusterDistanceSquared<DIM>(d_pointsValues, data.pointsCount, pointIndex, d_clustersValues, data.clustersCount, 0);
-                size_t minDistanceIndex = 0;
-                for (size_t j = 1; j < data.clustersCount; j++)
-                {
-                    float dist = pointToClusterDistanceSquared<DIM>(d_pointsValues, data.pointsCount, pointIndex, d_clustersValues, data.clustersCount, j);
-                    if (dist < minDistance)
-                    {
-                        minDistance = dist;
-                        minDistanceIndex = j;
-                    }
-                }
-                size_t previousCluster = d_memberships[pointIndex];
-                d_memberships[pointIndex] = minDistanceIndex;
-                return (minDistanceIndex != previousCluster ? 1 : 0);
-            },
+            findClusterFunctor,
             0,
             thrust::plus<size_t>());
 
@@ -71,8 +107,9 @@ namespace KMeansClusteringGPUThrust
         thrust::device_vector<size_t> membershipsCopy(memberships);
 
         // Calculate how many points are asigned to each cluster
-        thrust::sort(membershipsCopy.begin(), membershipsCopy.end());
+        thrust::sort(thrust::device, membershipsCopy.begin(), membershipsCopy.end());
         thrust::reduce_by_key(
+            thrust::device,
             membershipsCopy.begin(),
             membershipsCopy.end(),
             thrust::constant_iterator<size_t>(1),
@@ -91,21 +128,25 @@ namespace KMeansClusteringGPUThrust
 
             thrust::device_vector<float> clustersSumsInDimension(data.pointsCount);
 
-            // // Calculate sum of all points (d dimension) assigned to each cluster
+            // Calculate sum of all points (d dimension) assigned to each cluster
             thrust::sort_by_key(
+                thrust::device,
                 membershipsInnerCopy.begin(),
                 membershipsInnerCopy.end(),
                 pointsValuesInDimension.begin());
             thrust::reduce_by_key(
+                thrust::device,
                 membershipsInnerCopy.begin(),
                 membershipsInnerCopy.end(),
                 pointsValuesInDimension.begin(),
                 outputKeys.begin(),
                 clustersSumsInDimension.begin());
 
-            // // Calculate means
+            // TODO: we can try to save this clustersSumInDimension in some bigger array and then call this next transform only once for it, may be it will be a little faster?
+            // Calculate means
             auto clustersDimensionStart = data.clustersValues.begin() + d * data.clustersCount;
             thrust::transform(
+                thrust::device,
                 clustersSumsInDimension.begin(),
                 clustersSumsInDimension.begin() + data.clustersCount,
                 thrust::make_transform_iterator(clustersMembershipsCount.begin(), [] __host__ __device__(size_t count)
@@ -115,13 +156,15 @@ namespace KMeansClusteringGPUThrust
         }
     }
 
-    // FIXME: the resulsts are incorrect
     template <size_t DIM>
     Utils::ClusteringResult kMeansClustering(KMeansData::KMeansDataGPUThrust data)
     {
+        CpuTimer::Timer cpuTimer;
+
         // We initialize memberships array with POINTS COUNT, so that in first step each point doesn't have any cluster asssigned
         thrust::device_vector<size_t> memberships(data.pointsCount, data.pointsCount);
 
+        cpuTimer.start();
         for (size_t k = 0; k < Consts::MAX_ITERATION; k++)
         {
             size_t changedPointsCount = findClustersForPoints<DIM>(data, memberships);
@@ -131,6 +174,8 @@ namespace KMeansClusteringGPUThrust
             }
             updateClusters<DIM>(data, memberships);
         }
+        cpuTimer.end();
+        cpuTimer.printResult("K-means clustering (main algorithm)");
 
         thrust::host_vector<float> clustersValues(data.clustersValues);
         thrust::host_vector<size_t> hostMemberships(memberships);

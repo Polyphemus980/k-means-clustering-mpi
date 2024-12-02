@@ -110,38 +110,37 @@ namespace KMeansClusteringGPUSM
         }
     }
 
+    // Function for accumulating clusters memberships count
+    // There should be thread for every cluster
+    // We know it always will be run in single block
+    __global__ void accumulateNewClustersMemerships(KMeansData::KMeansDataGPU d_data, size_t *d_clustersMembershipCount, uint32_t *d_newClustersMembershipCount, size_t previousBlocksCount)
+    {
+        auto threadId = threadIdx.x;
+        d_clustersMembershipCount[threadId] = 0;
+        // For each cluster we calculate how many points belong to it accumulating results from all blocks
+        for (size_t b = 0; b < previousBlocksCount; b++)
+        {
+            d_clustersMembershipCount[threadId] += d_newClustersMembershipCount[d_data.clustersCount * b + threadId];
+        }
+    }
+
     // Function for updating clusters based on new membership
     // There should be thread spawned for every cluster for every dimension, so CLUSTERS_COUNT * DIM total
+    // We know it always will be run in single block
     template <size_t DIM>
-    __global__ void updateClusters(KMeansData::KMeansDataGPU d_data, size_t *d_clustersMembershipCount, float *d_newClusters, uint32_t *d_newClustersMembershipCount, size_t previousBlocksCount)
+    __global__ void updateClusters(KMeansData::KMeansDataGPU d_data, size_t *d_clustersMembershipCount, float *d_newClusters, size_t previousBlocksCount)
     {
-        auto threadId = blockDim.x * blockIdx.x + threadIdx.x;
-        if (threadId < d_data.clustersCount)
+        auto threadId = threadIdx.x;
+        d_data.d_clustersValues[threadId] = 0;
+        // For each cluster dimension we accumulate results from all blocks
+        for (size_t b = 0; b < previousBlocksCount; b++)
         {
-            d_clustersMembershipCount[threadId] = 0;
-            // For each cluster we calculate how many points belong to it accumulating results from all blocks
-            for (size_t b = 0; b < previousBlocksCount; b++)
-            {
-                d_clustersMembershipCount[threadId] += d_newClustersMembershipCount[d_data.clustersCount * b + threadId];
-            }
+            d_data.d_clustersValues[threadId] += d_newClusters[d_data.clustersCount * DIM * b + threadId];
         }
-
-        // We can call it here, because we know that this kernel will always be launched in only one block
-        __syncthreads();
-
-        if (threadId < d_data.clustersCount * DIM)
-        {
-            d_data.d_clustersValues[threadId] = 0;
-            // For each cluster dimension we accumulate results from all blocks
-            for (size_t b = 0; b < previousBlocksCount; b++)
-            {
-                d_data.d_clustersValues[threadId] += d_newClusters[d_data.clustersCount * DIM * b + threadId];
-            }
-            // Can we somehow remove this `%` operation? its probably slow
-            size_t clusterId = threadId % d_data.clustersCount;
-            // We divide by number of points in cluster to get mean
-            d_data.d_clustersValues[threadId] /= d_clustersMembershipCount[clusterId];
-        }
+        // TODO: Can we somehow remove this `%` operation? its probably slow
+        size_t clusterId = threadId % d_data.clustersCount;
+        // We divide by number of points in cluster to get mean
+        d_data.d_clustersValues[threadId] /= d_clustersMembershipCount[clusterId];
     }
 
     template <size_t DIM>
@@ -153,6 +152,10 @@ namespace KMeansClusteringGPUSM
         // PointsCount is always greater than dim * clustersCount * newClustersBlockCount (~ 20 * 20 * 1000 = 400 000 << 1 000 000 )
         const uint32_t newClustersBlocksCount = ceil(d_data.pointsCount * 1.0 / Consts::THREADS_PER_BLOCK);
         const size_t newClustersSharedMemorySize = d_data.clustersCount * DIM * sizeof(float) + d_data.clustersCount * sizeof(uint32_t) + sizeof(int);
+
+        // We want to have clustersCount threads
+        // We know in worse case scenario it's 20 threads < 1024
+        const uint32_t accumulateNewClustersMemershipsBlocksCount = 1;
 
         // We want to have clustersCount * DIM threads
         // We know in worst case scenario it's 20 * 20 = 400 < 1024, so it's always gonna fit in one block
@@ -197,7 +200,7 @@ namespace KMeansClusteringGPUSM
         // We don't need to call cudaDeviceSynchronzie because we use single device and we don't use cuda streams
         for (size_t k = 0; k < Consts::MAX_ITERATION; k++)
         {
-            // Call to first kernel
+            // Calculate new membership
             calculateMembershipAndNewClusters<DIM><<<newClustersBlocksCount, Consts::THREADS_PER_BLOCK, newClustersSharedMemorySize>>>(d_data, d_newClusters, d_newClustersMembershipCount, d_memberships, d_shouldContinue);
             CHECK_CUDA(cudaGetLastError());
 
@@ -217,8 +220,12 @@ namespace KMeansClusteringGPUSM
                 break;
             }
 
-            // Call to second kernel
-            updateClusters<DIM><<<updateClustersBlocksCount, Consts::THREADS_PER_BLOCK>>>(d_data, d_clustersMembershipCount, d_newClusters, d_newClustersMembershipCount, newClustersBlocksCount);
+            // Accumulate counts from all blocks from previous kernel
+            accumulateNewClustersMemerships<<<accumulateNewClustersMemershipsBlocksCount, d_data.clustersCount>>>(d_data, d_clustersMembershipCount, d_newClustersMembershipCount, newClustersBlocksCount);
+            CHECK_CUDA(cudaGetLastError());
+
+            // Calculate new clusters
+            updateClusters<DIM><<<updateClustersBlocksCount, d_data.clustersCount * DIM>>>(d_data, d_clustersMembershipCount, d_newClusters, newClustersBlocksCount);
             CHECK_CUDA(cudaGetLastError());
         }
         gpuTimer.end();

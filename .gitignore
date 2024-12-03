@@ -1,6 +1,7 @@
 k_means_clustering
 KMeans
 obj
+build
 # files are too big to push them to repo
 input
 output

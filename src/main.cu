@@ -9,7 +9,6 @@
 #include "k_means_clustering_cpu.cuh"
 #include "k_means_clustering_gpu_sm.cuh"
 #include "k_means_clustering_gpu_thrust.cuh"
-#include "cpu_timer.cuh"
 
 // This function is an actual entry point
 // We assume that at this point `inputFile` is changed in a way that
@@ -17,22 +16,14 @@
 template <size_t DIM>
 void start(FILE *inputFile, size_t pointsCount, size_t clustersCount, Utils::ProgramArgs &programArgs)
 {
-    // TODO: remote this timer from here and put it inside functions
-    CpuTimer::Timer cpuTimer;
     KMeansData::KMeansData<DIM> h_kMeansData;
     switch (programArgs.inputFileType)
     {
     case Utils::InputFileType::TEXT:
-        cpuTimer.start();
         h_kMeansData = FileIO::LoadFromTextFile<DIM>(inputFile, pointsCount, clustersCount);
-        cpuTimer.end();
-        cpuTimer.printResult("Load from text file");
         break;
     case Utils::InputFileType::BINARY:
-        cpuTimer.start();
         h_kMeansData = FileIO::LoadFromBinFile<DIM>(inputFile, pointsCount, clustersCount);
-        cpuTimer.end();
-        cpuTimer.printResult("Load from binary file");
         break;
     default:
         throw std::runtime_error("UNREACHABLE");
@@ -43,10 +34,7 @@ void start(FILE *inputFile, size_t pointsCount, size_t clustersCount, Utils::Pro
     switch (programArgs.algorithmMode)
     {
     case Utils::AlgorithmMode::CPU:
-        cpuTimer.start();
         result = KMeansClusteringCPU::kMeanClustering<DIM>(h_kMeansData);
-        cpuTimer.end();
-        cpuTimer.printResult("K-means clustering (main algorithm)");
         break;
     case Utils::AlgorithmMode::GPU_FIRST:
         result = KMeansClusteringGPUSM::kMeansClustering<DIM>(h_kMeansData.transformToGPURepresentation());
@@ -58,10 +46,7 @@ void start(FILE *inputFile, size_t pointsCount, size_t clustersCount, Utils::Pro
         throw std::runtime_error("UNREACHABLE");
     }
 
-    cpuTimer.start();
     FileIO::SaveResultToTextFile<DIM>(programArgs.outputFilePath, result, h_kMeansData.getClustersCount());
-    cpuTimer.end();
-    cpuTimer.printResult("Save results to file");
 }
 
 int main(int argc, char **argv)

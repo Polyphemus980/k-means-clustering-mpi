@@ -66,6 +66,9 @@ namespace KMeansClusteringCPU
     template <size_t DIM>
     Utils::ClusteringResult kMeanClustering(const KMeansData::KMeansData<DIM> &h_kMeansData)
     {
+        CpuTimer::Timer cpuTimer;
+        cpuTimer.start();
+
         auto points = h_kMeansData.getValues();
         auto pointsCount = h_kMeansData.getPointsCount();
         auto clustersCount = h_kMeansData.getClustersCount();
@@ -99,6 +102,10 @@ namespace KMeansClusteringCPU
                 updateCluster<DIM>(clusters, newClusters, newClustersSize, clustersCount, j);
             }
         }
+
+        cpuTimer.end();
+        cpuTimer.printResult("K-means clustering (main algorithm)");
+
         return Utils::ClusteringResult{
             .clustersValues = clusters,
             .membership = membership};

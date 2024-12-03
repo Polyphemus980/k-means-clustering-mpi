@@ -7,6 +7,7 @@
 #include "utils.cuh"
 #include "k_means_data.cuh"
 #include "k_means_clustering_cpu.cuh"
+#include "cpu_timer.cuh"
 
 namespace FileIO
 {
@@ -18,6 +19,7 @@ namespace FileIO
     template <size_t DIM>
     KMeansData::KMeansData<DIM> LoadFromTextFile(FILE *file, size_t pointsCount, size_t clustersCount)
     {
+        CpuTimer::Timer cpuTimer;
         if (!file)
         {
             throw std::invalid_argument("Error: invalid file pointer");
@@ -25,6 +27,7 @@ namespace FileIO
 
         thrust::host_vector<float> values(pointsCount * DIM);
         thrust::host_vector<float> clustersValues(clustersCount * DIM);
+        cpuTimer.start();
         for (size_t i = 0; i < pointsCount; i++)
         {
             for (size_t d = 0; d < DIM; d++)
@@ -41,6 +44,9 @@ namespace FileIO
         }
 
         fclose(file);
+        cpuTimer.end();
+        cpuTimer.printResult("Load from text file");
+
         KMeansData::KMeansData<DIM> data{pointsCount, clustersCount, values, clustersValues};
         return data;
     }
@@ -48,6 +54,8 @@ namespace FileIO
     template <size_t DIM>
     KMeansData::KMeansData<DIM> LoadFromBinFile(FILE *file, size_t pointsCount, size_t clustersCount)
     {
+        CpuTimer::Timer cpuTimer;
+
         if (!file)
         {
             throw std::invalid_argument("Error: invalid file pointer");
@@ -56,6 +64,7 @@ namespace FileIO
         thrust::host_vector<float> values(pointsCount * DIM);
         thrust::host_vector<float> clustersValues(clustersCount * DIM);
 
+        cpuTimer.start();
         float *buffer = (float *)malloc(sizeof(float) * values.size());
         if (buffer == nullptr)
         {
@@ -78,6 +87,8 @@ namespace FileIO
                 }
             }
         }
+        cpuTimer.end();
+        cpuTimer.printResult("Load from binary file");
 
         fclose(file);
         KMeansData::KMeansData<DIM> data{pointsCount, clustersCount, values, clustersValues};
@@ -87,12 +98,15 @@ namespace FileIO
     template <size_t DIM>
     void SaveResultToTextFile(const char *outputPath, Utils::ClusteringResult results, size_t clustersCount)
     {
+        CpuTimer::Timer cpuTimer;
+
         FILE *file = fopen(outputPath, "w");
         if (!file)
         {
             throw std::invalid_argument("Error: cannot open output file");
         }
 
+        cpuTimer.start();
         for (size_t j = 0; j < clustersCount; j++)
         {
             for (size_t d = 0; d < DIM; d++)
@@ -116,6 +130,8 @@ namespace FileIO
         }
 
         fclose(file);
+        cpuTimer.end();
+        cpuTimer.printResult("Save results to file");
     }
 
 } // FileIO

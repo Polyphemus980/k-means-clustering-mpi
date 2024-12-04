@@ -22,6 +22,6 @@ namespace GpuTimer
 
     void Timer::printResult(const char *s)
     {
-        printf("[GPU] Step: \"%s\", Time: %f ms\n", s, this->_timeInMS);
+        printf("[GPU TIMER] Step: \"%s\", Time: %f ms\n", s, this->_timeInMS);
     }
 } // GpuTimer

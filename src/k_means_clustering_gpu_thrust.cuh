@@ -142,7 +142,6 @@ namespace KMeansClusteringGPUThrust
                 outputKeys.begin(),
                 clustersSumsInDimension.begin());
 
-            // TODO: we can try to save this clustersSumInDimension in some bigger array and then call this next transform only once for it, may be it will be a little faster?
             // Calculate means
             auto clustersDimensionStart = data.clustersValues.begin() + d * data.clustersCount;
             thrust::transform(
@@ -164,10 +163,12 @@ namespace KMeansClusteringGPUThrust
         // We initialize memberships array with POINTS COUNT, so that in first step each point doesn't have any cluster asssigned
         thrust::device_vector<size_t> memberships(data.pointsCount, data.pointsCount);
 
+        printf("[START] K-means clustering (main algorithm)\n");
         cpuTimer.start();
         for (size_t k = 0; k < Consts::MAX_ITERATION; k++)
         {
             size_t changedPointsCount = findClustersForPoints<DIM>(data, memberships);
+            printf("[INFO] Iteration: %ld, changed points: %ld\n", k, changedPointsCount);
             if (changedPointsCount == 0)
             {
                 break;

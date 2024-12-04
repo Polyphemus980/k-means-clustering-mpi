@@ -67,6 +67,7 @@ namespace KMeansClusteringCPU
     Utils::ClusteringResult kMeanClustering(const KMeansData::KMeansData<DIM> &h_kMeansData)
     {
         CpuTimer::Timer cpuTimer;
+        printf("[START] K-means clustering (main algorithm)\n");
         cpuTimer.start();
 
         auto points = h_kMeansData.getValues();
@@ -74,13 +75,13 @@ namespace KMeansClusteringCPU
         auto clustersCount = h_kMeansData.getClustersCount();
         // we init this vector with n elements, each one with value k (meaning they aren't in any cluster)
         thrust::host_vector<size_t> membership(h_kMeansData.getPointsCount(), h_kMeansData.getClustersCount());
-        bool has_change = false;
+        size_t changeCount;
         thrust::host_vector<float> clusters{h_kMeansData.getClustersValues()};
         thrust::host_vector<float> newClusters(h_kMeansData.getClustersCount() * DIM, 0);
         thrust::host_vector<size_t> newClustersSize(h_kMeansData.getClustersCount(), 0);
         for (size_t k = 0; k < Consts::MAX_ITERATION; k++)
         {
-            has_change = false;
+            changeCount = 0;
             thrust::fill(newClusters.begin(), newClusters.end(), 0);
             thrust::fill(newClustersSize.begin(), newClustersSize.end(), 0);
             for (size_t i = 0; i < h_kMeansData.getPointsCount(); i++)
@@ -89,11 +90,12 @@ namespace KMeansClusteringCPU
                 if (membership[i] != nearestClusterIndex)
                 {
                     membership[i] = nearestClusterIndex;
-                    has_change = true;
+                    changeCount++;
                 }
                 updateNewCluster<DIM>(points, pointsCount, i, newClusters, newClustersSize, clustersCount, membership[i]);
             }
-            if (!has_change)
+            printf("[INFO] Iteration: %ld, changed points: %ld\n", k, changeCount);
+            if (changeCount == 0)
             {
                 break;
             }

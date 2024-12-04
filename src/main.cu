@@ -61,10 +61,12 @@ int main(int argc, char **argv)
     if (strcmp(argv[1], "txt") == 0)
     {
         inputFileType = Utils::InputFileType::TEXT;
+        printf("[INFO] Data format: text\n");
     }
     else if (strcmp(argv[1], "bin") == 0)
     {
         inputFileType = Utils::InputFileType::BINARY;
+        printf("[INFO] Data format: binary\n");
     }
     else
     {
@@ -77,14 +79,17 @@ int main(int argc, char **argv)
     if (strcmp(argv[2], "cpu") == 0)
     {
         algorithmMode = Utils::AlgorithmMode::CPU;
+        printf("[INFO] Algorithm: CPU\n");
     }
     else if (strcmp(argv[2], "gpu1") == 0)
     {
         algorithmMode = Utils::AlgorithmMode::GPU_FIRST;
+        printf("[INFO] Algorithm: GPU1 (using custom kernels and shared memory)\n");
     }
     else if (strcmp(argv[2], "gpu2") == 0)
     {
         algorithmMode = Utils::AlgorithmMode::GPU_SECOND;
+        printf("[INFO] Algorithm: GPU2 (using thrust)\n");
     }
     else
     {
@@ -118,6 +123,8 @@ int main(int argc, char **argv)
         throw std::runtime_error("UNREACHABLE");
         break;
     }
+
+    printf("[INFO] Points: %zu, clusters: %zu, dimensions: %zu\n", parameters.pointsCount, parameters.clustersCount, parameters.dimensions);
 
     switch (parameters.dimensions)
     {

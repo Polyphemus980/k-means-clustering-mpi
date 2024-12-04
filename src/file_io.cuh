@@ -27,6 +27,7 @@ namespace FileIO
 
         thrust::host_vector<float> values(pointsCount * DIM);
         thrust::host_vector<float> clustersValues(clustersCount * DIM);
+        printf("[START] Load from text file\n");
         cpuTimer.start();
         for (size_t i = 0; i < pointsCount; i++)
         {
@@ -64,6 +65,7 @@ namespace FileIO
         thrust::host_vector<float> values(pointsCount * DIM);
         thrust::host_vector<float> clustersValues(clustersCount * DIM);
 
+        printf("[START] Load from binary file\n");
         cpuTimer.start();
         float *buffer = (float *)malloc(sizeof(float) * values.size());
         if (buffer == nullptr)
@@ -106,6 +108,7 @@ namespace FileIO
             throw std::invalid_argument("Error: cannot open output file");
         }
 
+        printf("[START] Save results to file\n");
         cpuTimer.start();
         for (size_t j = 0; j < clustersCount; j++)
         {

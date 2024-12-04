@@ -85,7 +85,7 @@ namespace KMeansClusteringGPUSM
             auto previousClusterIndex = d_memberships[threadId];
             if (previousClusterIndex != nearestClusterIndex)
             {
-                atomicOr(&s_shouldContinue[0], 1);
+                atomicAdd(&s_shouldContinue[0], 1);
                 d_memberships[threadId] = nearestClusterIndex;
             }
         }
@@ -137,7 +137,6 @@ namespace KMeansClusteringGPUSM
         {
             d_data.d_clustersValues[threadId] += d_newClusters[d_data.clustersCount * DIM * b + threadId];
         }
-        // TODO: Can we somehow remove this `%` operation? its probably slow
         size_t clusterId = threadId % d_data.clustersCount;
         // We divide by number of points in cluster to get mean
         d_data.d_clustersValues[threadId] /= d_clustersMembershipCount[clusterId];
@@ -196,6 +195,7 @@ namespace KMeansClusteringGPUSM
             throw std::runtime_error("Cannot allocate memory");
         }
 
+        printf("[START] K-means clustering (main algorithm)\n");
         gpuTimer.start();
         // We don't need to call cudaDeviceSynchronzie because we use single device and we don't use cuda streams
         for (size_t k = 0; k < Consts::MAX_ITERATION; k++)
@@ -203,19 +203,17 @@ namespace KMeansClusteringGPUSM
             // Calculate new membership
             calculateMembershipAndNewClusters<DIM><<<newClustersBlocksCount, Consts::THREADS_PER_BLOCK, newClustersSharedMemorySize>>>(d_data, d_newClusters, d_newClustersMembershipCount, d_memberships, d_shouldContinue);
             CHECK_CUDA(cudaGetLastError());
+            CHECK_CUDA(cudaDeviceSynchronize());
 
             // If all blocks return false than we know that no change was made and we can break from loop
             CHECK_CUDA(cudaMemcpy(shouldContinue, d_shouldContinue, sizeof(int) * newClustersBlocksCount, cudaMemcpyDeviceToHost));
-            bool totalShouldContinue = false;
+            size_t totalShouldContinue = 0;
             for (size_t b = 0; b < newClustersBlocksCount; b++)
             {
-                if (shouldContinue[b] != 0)
-                {
-                    totalShouldContinue = true;
-                    break;
-                }
+                totalShouldContinue += shouldContinue[b];
             }
-            if (!totalShouldContinue)
+            printf("[INFO] Iteration: %ld, changed points: %ld\n", k, totalShouldContinue);
+            if (totalShouldContinue == 0)
             {
                 break;
             }
@@ -239,6 +237,7 @@ namespace KMeansClusteringGPUSM
         CHECK_CUDA(cudaDeviceSynchronize());
 
         // Copy result from GPU to CPU
+        printf("[START] Copy data from GPU to CPU\n");
         cpuTimer.start();
         CHECK_CUDA(cudaMemcpy(clustersValues.data(), d_data.d_clustersValues, sizeof(float) * clustersValues.size(), cudaMemcpyDeviceToHost));
         CHECK_CUDA(cudaMemcpy(membership.data(), d_memberships, sizeof(size_t) * d_data.pointsCount, cudaMemcpyDeviceToHost));

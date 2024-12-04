@@ -102,6 +102,7 @@ namespace KMeansData
             CHECK_CUDA(cudaMalloc(&d_pointsValues, sizeof(float) * _values.size()));
             CHECK_CUDA(cudaMalloc(&d_clustersValues, sizeof(float) * _clustersValues.size()));
 
+            printf("[START] Copy data from CPU to GPU\n");
             cpuTimer.start();
 
             CHECK_CUDA(cudaMemcpy(d_pointsValues, _values.data(), sizeof(float) * _values.size(), cudaMemcpyHostToDevice));

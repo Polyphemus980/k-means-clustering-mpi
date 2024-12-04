@@ -18,6 +18,6 @@ namespace CpuTimer
 
     void Timer::printResult(const char *s)
     {
-        printf("[CPU] Step: \"%s\", Time: %ld ms\n", s, this->_timeInMS);
+        printf("[CPU TIMER] Step: \"%s\", Time: %ld ms\n", s, this->_timeInMS);
     }
 } // CpuTimer

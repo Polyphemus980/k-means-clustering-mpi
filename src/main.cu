@@ -103,20 +103,25 @@ int main(int argc, char **argv)
         .inputFilePath = argv[3],
         .outputFilePath = argv[4]};
 
-    FILE *inputFile = fopen(args.inputFilePath, "r");
-    if (inputFile == nullptr)
-    {
-        throw std::runtime_error("Cannot open input file");
-    }
-
     Utils::Parameters parameters{};
+    FILE *inputFile;
 
     switch (args.inputFileType)
     {
     case Utils::InputFileType::TEXT:
+        inputFile = fopen(args.inputFilePath, "r");
+        if (inputFile == nullptr)
+        {
+            throw std::runtime_error("Cannot open input file");
+        }
         parameters = FileIO::LoadParamsFromTextFile(inputFile);
         break;
     case Utils::InputFileType::BINARY:
+        inputFile = fopen(args.inputFilePath, "rb");
+        if (inputFile == nullptr)
+        {
+            throw std::runtime_error("Cannot open input file");
+        }
         parameters = FileIO::LoadParamsFromBinFile(inputFile);
         break;
     default:

@@ -16,84 +16,75 @@
 namespace KMeansClusteringGPUThrust
 {
     template <size_t DIM>
-    __device__ float pointToClusterDistanceSquared(const float *d_pointsValues, size_t pointsCount, size_t pointIndex, const float *d_clustersValues, size_t clustersCount, size_t clusterIndex)
+    __device__ float pointToClusterDistanceSquared(float *d_pointsValues, size_t pointsCount, float *d_clustersValues, size_t clustersCount, size_t pointIndex, size_t clusterIndex)
     {
         float distance = 0;
         for (size_t d = 0; d < DIM; d++)
         {
             float diff = KMeansData::Helpers::GetCoord(d_pointsValues, pointsCount, pointIndex, d) - KMeansData::Helpers::GetCoord(d_clustersValues, clustersCount, clusterIndex, d);
+
             distance += diff * diff;
         }
         return distance;
     }
 
     template <size_t DIM>
-    struct FindClusterFunctor
+    __device__ size_t findNearestCluster(float *d_pointsValues, size_t pointsCount, float *d_clustersValues, size_t clustersCount, size_t pointIndex)
     {
-        const float *d_pointsValues;
-        const float *d_clustersValues;
-        size_t *d_memberships;
-        size_t pointsCount;
-        size_t clustersCount;
-
-        __host__ __device__ FindClusterFunctor(
-            const float *pointsValues,
-            const float *clustersValues,
-            size_t *memberships,
-            size_t pointsCount,
-            size_t clustersCount)
-            : d_pointsValues(pointsValues),
-              d_clustersValues(clustersValues),
-              d_memberships(memberships),
-              pointsCount(pointsCount),
-              clustersCount(clustersCount) {}
-
-        __host__ __device__ size_t operator()(size_t pointIndex) const
+        float minDist = pointToClusterDistanceSquared<DIM>(d_pointsValues, pointsCount, d_clustersValues, clustersCount, pointIndex, 0);
+        size_t minDistIndex = 0;
+        for (size_t j = 1; j < clustersCount; j++)
         {
-            float minDistance = pointToClusterDistanceSquared<DIM>(d_pointsValues, pointsCount, pointIndex, d_clustersValues, clustersCount, 0);
-            size_t minDistanceIndex = 0;
+            float distSquared = pointToClusterDistanceSquared<DIM>(d_pointsValues, pointsCount, d_clustersValues, clustersCount, pointIndex, j);
 
-            for (size_t j = 1; j < clustersCount; j++)
+            if (distSquared < minDist)
             {
-                float dist = pointToClusterDistanceSquared<DIM>(d_pointsValues, pointsCount, pointIndex, d_clustersValues, clustersCount, j);
-                if (dist < minDistance)
-                {
-                    minDistance = dist;
-                    minDistanceIndex = j;
-                }
+                minDist = distSquared;
+                minDistIndex = j;
             }
-
-            size_t previousCluster = d_memberships[pointIndex];
-            d_memberships[pointIndex] = minDistanceIndex;
-
-            return (minDistanceIndex != previousCluster ? 1 : 0);
         }
-    };
+        return minDistIndex;
+    }
 
-    // Returns number of points that changed their membership
+    // Function for finding new membership for each point
+    // Each thread should be responsible for single point
     template <size_t DIM>
-    size_t findClustersForPoints(const KMeansData::KMeansDataGPUThrust &data, thrust::device_vector<size_t> &memberships)
+    __global__ void calculateMemberships(float *d_pointsValues, size_t pointsCount, float *d_clustersValues, size_t clustersCount, size_t *d_memberships, int *d_shouldContinue)
     {
-        const float *d_pointsValues = thrust::raw_pointer_cast(data.pointsValues.data());
-        const float *d_clustersValues = thrust::raw_pointer_cast(data.clustersValues.data());
-        size_t *d_memberships = thrust::raw_pointer_cast(memberships.data());
+        auto threadId = blockDim.x * blockIdx.x + threadIdx.x;
+        auto localThreadId = threadIdx.x;
 
-        FindClusterFunctor<DIM> findClusterFunctor(
-            d_pointsValues,
-            d_clustersValues,
-            d_memberships,
-            data.pointsCount,
-            data.clustersCount);
+        __shared__ int s_shouldContinue[1];
 
-        size_t changedPointsCount = thrust::transform_reduce(
-            thrust::device,
-            thrust::counting_iterator<size_t>(0),
-            thrust::counting_iterator<size_t>(data.pointsCount),
-            findClusterFunctor,
-            0,
-            thrust::plus<size_t>());
+        // Initialize shared memory in each block
+        if (localThreadId == 0)
+        {
+            s_shouldContinue[0] = 0;
+        }
 
-        return changedPointsCount;
+        // Ensure shared memory is properly initialized
+        __syncthreads();
+
+        // For each point find its nearest cluster, update membership table and save results in shared memory
+        if (threadId < pointsCount)
+        {
+            auto nearestClusterIndex = findNearestCluster<DIM>(d_pointsValues, pointsCount, d_clustersValues, clustersCount, threadId);
+            auto previousClusterIndex = d_memberships[threadId];
+            if (previousClusterIndex != nearestClusterIndex)
+            {
+                atomicAdd(&s_shouldContinue[0], 1);
+                d_memberships[threadId] = nearestClusterIndex;
+            }
+        }
+
+        // Finish all calculation made on shared memory
+        __syncthreads();
+
+        // Copy results from shared memory to global memory
+        if (localThreadId == 0)
+        {
+            d_shouldContinue[blockIdx.x] = s_shouldContinue[0];
+        }
     }
 
     template <size_t DIM>
@@ -163,20 +154,72 @@ namespace KMeansClusteringGPUThrust
         // We initialize memberships array with POINTS COUNT, so that in first step each point doesn't have any cluster asssigned
         thrust::device_vector<size_t> memberships(data.pointsCount, data.pointsCount);
 
-        printf("[START] K-means clustering (main algorithm)\n");
-        cpuTimer.start();
-        for (size_t k = 0; k < Consts::MAX_ITERATION; k++)
+        const uint32_t calculateMembershipsBlocksCount = ceil(data.pointsCount * 1.0 / Consts::THREADS_PER_BLOCK);
+        thrust::device_vector<int> shouldContinue(calculateMembershipsBlocksCount, 0);
+
+        int *h_shouldContinue = nullptr;
+
+        bool isError = false;
+        std::runtime_error error("placeholder");
+
+        try
         {
-            size_t changedPointsCount = findClustersForPoints<DIM>(data, memberships);
-            printf("[INFO] Iteration: %ld, changed points: %ld\n", k, changedPointsCount);
-            if (changedPointsCount == 0)
+            h_shouldContinue = (int *)malloc(sizeof(int) * calculateMembershipsBlocksCount);
+
+            if (h_shouldContinue == nullptr)
             {
-                break;
+                throw std::runtime_error("Cannot allocate memory");
             }
-            updateClusters<DIM>(data, memberships);
+
+            printf("[START] K-means clustering (main algorithm)\n");
+            cpuTimer.start();
+            for (size_t k = 0; k < Consts::MAX_ITERATION; k++)
+            {
+                auto d_memberships = thrust::raw_pointer_cast(memberships.data());
+                auto d_shouldContinue = thrust::raw_pointer_cast(shouldContinue.data());
+                auto d_pointsValues = thrust::raw_pointer_cast(data.pointsValues.data());
+                auto d_clustersValues = thrust::raw_pointer_cast(data.clustersValues.data());
+                // Calculate new membership
+                calculateMemberships<DIM><<<calculateMembershipsBlocksCount, Consts::THREADS_PER_BLOCK>>>(d_pointsValues, data.pointsCount, d_clustersValues, data.clustersCount, d_memberships, d_shouldContinue);
+                CHECK_CUDA(cudaGetLastError());
+                CHECK_CUDA(cudaDeviceSynchronize());
+
+                // If all blocks return false than we know that no change was made and we can break from loop
+                CHECK_CUDA(cudaMemcpy(h_shouldContinue, d_shouldContinue, sizeof(int) * calculateMembershipsBlocksCount, cudaMemcpyDeviceToHost));
+                size_t totalShouldContinue = 0;
+                for (size_t b = 0; b < calculateMembershipsBlocksCount; b++)
+                {
+                    totalShouldContinue += h_shouldContinue[b];
+                }
+                printf("[INFO] Iteration: %ld, changed points: %ld\n", k, totalShouldContinue);
+                if (totalShouldContinue == 0)
+                {
+                    break;
+                }
+
+                updateClusters<DIM>(data, memberships);
+            }
+            cpuTimer.end();
+            cpuTimer.printResult("K-means clustering (main algorithm)");
         }
-        cpuTimer.end();
-        cpuTimer.printResult("K-means clustering (main algorithm)");
+        catch (const std::runtime_error &e)
+        {
+            fprintf(stderr, "[ERROR]: %s", e.what());
+            isError = true;
+            error = e;
+            goto ERROR_HANDLING;
+        }
+
+    ERROR_HANDLING:
+        if (h_shouldContinue != nullptr)
+        {
+            free(h_shouldContinue);
+        }
+
+        if (isError)
+        {
+            throw error;
+        }
 
         thrust::host_vector<float> clustersValues(data.clustersValues);
         thrust::host_vector<size_t> hostMemberships(memberships);

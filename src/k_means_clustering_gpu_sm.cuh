@@ -173,7 +173,7 @@ namespace KMeansClusteringGPUSM
         float *d_newClusters = nullptr;
         uint32_t *d_newClustersMembershipCount = nullptr;
         int *d_shouldContinue = nullptr;
-        int *shouldContinue = (int *)malloc(sizeof(int) * newClustersBlocksCount);
+        int *shouldContinue = nullptr;
 
         // Prepare memory for storing results on CPU side
         thrust::host_vector<float> clustersValues(d_data.clustersCount * DIM);
@@ -200,6 +200,8 @@ namespace KMeansClusteringGPUSM
             CHECK_CUDA(cudaMalloc(&d_shouldContinue, sizeof(int) * newClustersBlocksCount));
 
             // CPU allocation
+            shouldContinue = (int *)malloc(sizeof(int) * newClustersBlocksCount);
+
             if (shouldContinue == nullptr)
             {
                 throw std::runtime_error("Cannot allocate memory");

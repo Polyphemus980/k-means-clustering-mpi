@@ -117,29 +117,32 @@ namespace KMeansClusteringGPUThrust
         // e.g. first element - sum of first coord of all points assigned to first clusters
         thrust::device_vector<float> clustersSumsInAllDimensions(data.clustersCount * DIM);
 
+        // Helper vectors used for storing pointsValues in d-th dimension, which will be sorted by their membership
+        thrust::device_vector<float> pointsValuesInDimension(data.pointsCount);
+
         // Calculate sums of coordinates for each cluster (separately for each dimension) + copy membershipCount for dimension
         for (size_t d = 0; d < DIM; d++)
         {
+            // Copy memberships count for d-th dimension (done here so we only have one loop)
             thrust::copy(clustersMembershipsCount.begin(), clustersMembershipsCount.end(), clustersMembershipsCountAllDims.begin() + d * data.clustersCount);
 
-            // We don't want to change original memberships - we must work on copy
-            thrust::device_vector<size_t> membershipsInnerCopy(memberships);
+            // Restore to original state
+            thrust::copy(memberships.begin(), memberships.end(), membershipsCopy.begin());
 
             auto dimensionStart = data.pointsValues.begin() + d * data.pointsCount;
             auto dimensionEnd = dimensionStart + data.pointsCount;
-            thrust::device_vector<float> pointsValuesInDimension(data.pointsCount);
             thrust::copy(dimensionStart, dimensionEnd, pointsValuesInDimension.begin());
 
             // Calculate sum of all points (d-th dimension) assigned to each cluster
             thrust::sort_by_key(
                 thrust::device,
-                membershipsInnerCopy.begin(),
-                membershipsInnerCopy.end(),
+                membershipsCopy.begin(),
+                membershipsCopy.end(),
                 pointsValuesInDimension.begin());
             thrust::reduce_by_key(
                 thrust::device,
-                membershipsInnerCopy.begin(),
-                membershipsInnerCopy.end(),
+                membershipsCopy.begin(),
+                membershipsCopy.end(),
                 pointsValuesInDimension.begin(),
                 // Same as before - we don't care about ouput keys and can safely discard them
                 thrust::make_discard_iterator(),

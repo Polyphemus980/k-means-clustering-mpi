@@ -90,6 +90,7 @@ namespace KMeansClusteringGPUThrust
     template <size_t DIM>
     void updateClusters(KMeansData::KMeansDataGPUThrust &data, const thrust::device_vector<size_t> &memberships)
     {
+        // How many points are assigned to each cluster
         thrust::device_vector<size_t> clustersMembershipsCount(data.clustersCount);
 
         // We don't care about this - we just pass it because thrust functions need it
@@ -173,12 +174,14 @@ namespace KMeansClusteringGPUThrust
 
             printf("[START] K-means clustering (main algorithm)\n");
             cpuTimer.start();
+
+            auto d_memberships = thrust::raw_pointer_cast(memberships.data());
+            auto d_shouldContinue = thrust::raw_pointer_cast(shouldContinue.data());
+            auto d_pointsValues = thrust::raw_pointer_cast(data.pointsValues.data());
+            auto d_clustersValues = thrust::raw_pointer_cast(data.clustersValues.data());
+
             for (size_t k = 0; k < Consts::MAX_ITERATION; k++)
             {
-                auto d_memberships = thrust::raw_pointer_cast(memberships.data());
-                auto d_shouldContinue = thrust::raw_pointer_cast(shouldContinue.data());
-                auto d_pointsValues = thrust::raw_pointer_cast(data.pointsValues.data());
-                auto d_clustersValues = thrust::raw_pointer_cast(data.clustersValues.data());
                 // Calculate new membership
                 calculateMemberships<DIM><<<calculateMembershipsBlocksCount, Consts::THREADS_PER_BLOCK>>>(d_pointsValues, data.pointsCount, d_clustersValues, data.clustersCount, d_memberships, d_shouldContinue);
                 CHECK_CUDA(cudaGetLastError());

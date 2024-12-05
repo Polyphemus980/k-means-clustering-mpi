@@ -5,6 +5,7 @@
 #include <thrust/host_vector.h>
 #include <thrust/iterator/counting_iterator.h>
 #include <thrust/iterator/constant_iterator.h>
+#include <thrust/iterator/discard_iterator.h>
 #include <thrust/sort.h>
 #include <thrust/reduce.h>
 
@@ -93,9 +94,7 @@ namespace KMeansClusteringGPUThrust
         // How many points are assigned to each cluster
         thrust::device_vector<size_t> clustersMembershipsCount(data.clustersCount);
 
-        // We don't care about this - we just pass it because thrust functions need it
-        thrust::device_vector<float> outputKeys(data.pointsCount);
-
+        // We don't want to sort and change original memberships - we must work on copy
         thrust::device_vector<size_t> membershipsCopy(memberships);
 
         // Calculate how many points are asigned to each cluster
@@ -104,13 +103,26 @@ namespace KMeansClusteringGPUThrust
             thrust::device,
             membershipsCopy.begin(),
             membershipsCopy.end(),
+            // Iterator that always returns 1 - ideal for our case of counting elements with same key
             thrust::constant_iterator<size_t>(1),
-            outputKeys.begin(),
+            // We don't care about keys after reduce, we only want to have values - so we can discard keys instead
+            // of using some dummy vector for it
+            thrust::make_discard_iterator(),
             clustersMembershipsCount.begin());
 
-        // Calculate new clusters coords (separately for each dimension)
+        // clustersMembershipsCount repeated DIM times
+        thrust::device_vector<size_t> clustersMembershipsCountAllDims(data.clustersCount * DIM);
+
+        // Sums of coords of points assigned to clusters
+        // e.g. first element - sum of first coord of all points assigned to first clusters
+        thrust::device_vector<float> clustersSumsInAllDimensions(data.clustersCount * DIM);
+
+        // Calculate sums of coordinates for each cluster (separately for each dimension) + copy membershipCount for dimension
         for (size_t d = 0; d < DIM; d++)
         {
+            thrust::copy(clustersMembershipsCount.begin(), clustersMembershipsCount.end(), clustersMembershipsCountAllDims.begin() + d * data.clustersCount);
+
+            // We don't want to change original memberships - we must work on copy
             thrust::device_vector<size_t> membershipsInnerCopy(memberships);
 
             auto dimensionStart = data.pointsValues.begin() + d * data.pointsCount;
@@ -118,9 +130,7 @@ namespace KMeansClusteringGPUThrust
             thrust::device_vector<float> pointsValuesInDimension(data.pointsCount);
             thrust::copy(dimensionStart, dimensionEnd, pointsValuesInDimension.begin());
 
-            thrust::device_vector<float> clustersSumsInDimension(data.pointsCount);
-
-            // Calculate sum of all points (d dimension) assigned to each cluster
+            // Calculate sum of all points (d-th dimension) assigned to each cluster
             thrust::sort_by_key(
                 thrust::device,
                 membershipsInnerCopy.begin(),
@@ -131,20 +141,20 @@ namespace KMeansClusteringGPUThrust
                 membershipsInnerCopy.begin(),
                 membershipsInnerCopy.end(),
                 pointsValuesInDimension.begin(),
-                outputKeys.begin(),
-                clustersSumsInDimension.begin());
-
-            // Calculate means
-            auto clustersDimensionStart = data.clustersValues.begin() + d * data.clustersCount;
-            thrust::transform(
-                thrust::device,
-                clustersSumsInDimension.begin(),
-                clustersSumsInDimension.begin() + data.clustersCount,
-                thrust::make_transform_iterator(clustersMembershipsCount.begin(), [] __host__ __device__(size_t count)
-                                                { return count > 0 ? 1.0f / count : 0.0f; }),
-                clustersDimensionStart,
-                thrust::multiplies<float>());
+                // Same as before - we don't care about ouput keys and can safely discard them
+                thrust::make_discard_iterator(),
+                clustersSumsInAllDimensions.begin() + d * data.clustersCount);
         }
+
+        // Calculate mean for each cluster in every dimension
+        thrust::transform(
+            thrust::device,
+            clustersSumsInAllDimensions.begin(),
+            clustersSumsInAllDimensions.end(),
+            thrust::make_transform_iterator(clustersMembershipsCountAllDims.begin(), [] __host__ __device__(size_t count)
+                                            { return count > 0 ? 1.0f / count : 0.0f; }),
+            data.clustersValues.begin(),
+            thrust::multiplies<float>());
     }
 
     template <size_t DIM>

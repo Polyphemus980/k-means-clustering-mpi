@@ -54,9 +54,9 @@ namespace KMeansClusteringCPU
     template <size_t DIM>
     void updateCluster(thrust::host_vector<float> &clusters, const thrust::host_vector<float> &newClusters, const thrust::host_vector<size_t> &newClustersSize, size_t clustersCount, size_t clusterIndex)
     {
-        for (size_t d = 0; d < DIM; d++)
+        for (size_t j = 0; j < clustersCount; j++)
         {
-            for (size_t j = 0; j < clustersCount; j++)
+            for (size_t d = 0; d < DIM; d++)
             {
                 clusters[d * clustersCount + j] = KMeansData::Helpers::GetCoord(newClusters, clustersCount, j, d) / newClustersSize[j];
             }

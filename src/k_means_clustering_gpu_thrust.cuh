@@ -165,8 +165,8 @@ namespace KMeansClusteringGPUThrust
     {
         CpuTimer::Timer cpuTimer;
 
-        // We initialize memberships array with POINTS COUNT, so that in first step each point doesn't have any cluster asssigned
-        thrust::device_vector<size_t> memberships(data.pointsCount, data.pointsCount);
+        // We initialize memberships array with clustersCount, so that in first step each point doesn't have any cluster asssigned
+        thrust::device_vector<size_t> memberships(data.pointsCount, data.clustersCount);
 
         const uint32_t calculateMembershipsBlocksCount = ceil(data.pointsCount * 1.0 / Consts::THREADS_PER_BLOCK);
         thrust::device_vector<int> shouldContinue(calculateMembershipsBlocksCount, 0);

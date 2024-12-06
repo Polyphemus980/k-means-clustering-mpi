@@ -21,7 +21,7 @@ namespace KMeansClusteringCPU
             float diff = KMeansData::Helpers::GetCoord(points, pointsCount, pointIndex, d) - KMeansData::Helpers::GetCoord(clusters, clustersCount, clusterIndex, d);
             distance += diff * diff;
         }
-        return sqrt(distance);
+        return distance;
     }
 
     template <size_t DIM>

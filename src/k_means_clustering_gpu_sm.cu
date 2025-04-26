@@ -1,5 +1,5 @@
 #include "k_means_clustering_gpu_sm.cuh"
-
+#include "mpi.h"
 namespace KMeansClusteringGPUSM
 {
     __device__ float pointToClusterDistanceSquared(KMeansData::KMeansDataGPU d_data, size_t pointIndex, size_t clusterIndex)

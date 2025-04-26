@@ -97,6 +97,43 @@ namespace KMeansClusteringGPUSM
         }
     }
 
+    __global__ void calculateMembershipMPI(KMeansData::KMeansDataGPU d_data, size_t *d_memberships, int *d_shouldContinue)
+    {
+        auto threadId = blockDim.x * blockIdx.x + threadIdx.x;
+        auto localThreadId = threadIdx.x;
+
+        __shared__ int s_shouldContinue[1];
+
+        // Initialize shared memory in each block
+        if (localThreadId == 0)
+        {
+            s_shouldContinue[0] = 0;
+        }
+        // Ensure shared memory is properly initialized
+        __syncthreads();
+
+        // For each point find its nearest cluster, update membership table and save results in shared memory
+        if (threadId < d_data.pointsCount)
+        {
+            auto nearestClusterIndex = findNearestCluster(d_data, threadId);
+            auto previousClusterIndex = d_memberships[threadId];
+            if (previousClusterIndex != nearestClusterIndex)
+            {
+                atomicAdd(&s_shouldContinue[0], 1);
+                d_memberships[threadId] = nearestClusterIndex;
+            }
+        }
+
+        // Finish all calculation made on shared memory
+        __syncthreads();
+
+        // Copy results from shared memory to global memory
+        if (localThreadId == 0)
+        {
+            d_shouldContinue[blockIdx.x] = s_shouldContinue[0];
+        }
+    }
+
     // Function for accumulating clusters memberships count
     // There should be thread for every cluster
     // We know it always will be run in single block
@@ -170,19 +207,19 @@ namespace KMeansClusteringGPUSM
         try
         {
             // GPU allocations
-            CHECK_CUDA(cudaMalloc(&d_memberships, sizeof(size_t) * d_data.pointsCount));
+            CHECK_CUDA(cudaMalloc((void **)&d_memberships, sizeof(size_t) * d_data.pointsCount));
             // We initialize the array that membership[i] = size_t::MAX
             CHECK_CUDA(cudaMemset(d_memberships, 0xFF, sizeof(size_t) * d_data.pointsCount));
 
-            CHECK_CUDA(cudaMalloc(&d_clustersMembershipCount, sizeof(size_t) * d_data.clustersCount));
+            CHECK_CUDA(cudaMalloc((void **)&d_clustersMembershipCount, sizeof(size_t) * d_data.clustersCount));
 
             // We have separate clustersValues for each block
-            CHECK_CUDA(cudaMalloc(&d_newClusters, sizeof(float) * d_data.clustersCount * d_data.DIM * newClustersBlocksCount));
+            CHECK_CUDA(cudaMalloc((void **)&d_newClusters, sizeof(float) * d_data.clustersCount * d_data.DIM * newClustersBlocksCount));
 
             // We have separate clustersCount for each block
-            CHECK_CUDA(cudaMalloc(&d_newClustersMembershipCount, sizeof(uint32_t) * d_data.clustersCount * newClustersBlocksCount));
+            CHECK_CUDA(cudaMalloc((void **)&d_newClustersMembershipCount, sizeof(uint32_t) * d_data.clustersCount * newClustersBlocksCount));
 
-            CHECK_CUDA(cudaMalloc(&d_shouldContinue, sizeof(int) * newClustersBlocksCount));
+            CHECK_CUDA(cudaMalloc((void **)&d_shouldContinue, sizeof(int) * newClustersBlocksCount));
 
             // CPU allocation
             shouldContinue = (int *)malloc(sizeof(int) * newClustersBlocksCount);
@@ -298,38 +335,166 @@ namespace KMeansClusteringGPUSM
         CpuTimer::Timer cpuTimer;
         GpuTimer::Timer gpuTimer;
 
-        // Initialize MPI environment
-        int rank, size;
-        MPI_Init(NULL, NULL);
-        MPI_Comm_rank(MPI_COMM_WORLD, &rank);
-        MPI_Comm_size(MPI_COMM_WORLD, &size);
-
-        printf("[INFO] Process %d of %d started\n", rank, size);
-
-        // Get data dimensions
-        size_t pointsCount = h_kMeansData.getPointsCount();
-        size_t clustersCount = h_kMeansData.getClustersCount();
-        size_t DIM = h_kMeansData.getDIM();
+        int pointsCount = h_kMeansData.getPointsCount();
+        int clustersCount = h_kMeansData.getClustersCount();
+        int DIM = h_kMeansData.getDIM();
 
         // Calculate how many points each process will handle
-        size_t pointsPerProcess = pointsCount / size;
-        size_t remainingPoints = pointsCount % size;
+        int pointsPerProcess = pointsCount / size;
+        int remainingPoints = pointsCount % size;
 
-        // Calculate start and end indices for this process
-        size_t startPointIdx = rank * pointsPerProcess + std::min((size_t)rank, remainingPoints);
-        size_t localPointsCount = pointsPerProcess + (rank < remainingPoints ? 1 : 0);
+        printf("Size: %d \n", size);
 
-        printf("[INFO] Process %d handles points %zu to %zu (%zu points)\n",
-               rank, startPointIdx, startPointIdx + localPointsCount - 1, localPointsCount);
-
-        if (rank == 0)
+        for (int i = 1; i < size; i++)
         {
-            MPI
+            printf("[INFO] Sending dim to process %d \n", i);
+            MPI_Send(&DIM, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
         }
+
+        int *localPointCounts = (int *)malloc(sizeof(int) * size);
+        for (int i = 1; i < size; i++)
+        {
+            int localPointsCount = pointsPerProcess + (i < remainingPoints ? 1 : 0);
+            printf("[INFO] Process %d handles %d points\n",
+                   i, localPointsCount);
+            MPI_Send(&localPointsCount, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
+        }
+
+        for (int i = 1; i < size; i++)
+        {
+            printf("[INFO] Sending clustersCount to process %d \n", i);
+            MPI_Send(&clustersCount, 1, MPI_INT, i, 0, MPI_COMM_WORLD);
+        }
+
+        for (int i = 1; i < size; i++)
+        {
+            int startPointIdx = i * pointsPerProcess + std::min(i, remainingPoints);
+            int localPointsCount = pointsPerProcess + (i < remainingPoints ? 1 : 0);
+
+            printf("[INFO] Sending points to process %d \n", i);
+            MPI_Send(h_kMeansData.getValues().data() + startPointIdx, localPointsCount, MPI_FLOAT, i, 0, MPI_COMM_WORLD);
+            printf("[INFO] Sending points to process %d \n", i);
+            MPI_Send(h_kMeansData.getClustersValues().data(), clustersCount * DIM, MPI_FLOAT, i, 0, MPI_COMM_WORLD);
+        }
+
+        // Start of the loop - wait for ranks to calculate membership and then calculate the new centroids
+        for (int i = 1; Consts::MAX_ITERATION; i++)
+        {
+
+            // Do my own work
+
+            // Receive if memberships changed
+
+            for (int i = 1; i < size; i++)
+            {
+                // MPI_Recv(...)
+            }
+
+            // Send info if the process continues - membership change sum == 0 || is the last iteration , break otherwise
+
+            // If process continues receive new memberships
+
+            MPI_Recv()
+
+            // Calculate and send new centroids
+        }
+
+        return Utils::ClusteringResult{
+            .clustersValues = thrust::host_vector<float>(),
+            .membership = thrust::host_vector<size_t>(),
+        };
     }
 
     void kMeansClusteringMPIAdditionalRank(int rank, int size)
     {
+        // Load data from main rank
         printf("my rank is: %d\n", rank);
+        int DIM;
+        MPI_Recv(&DIM, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        printf("[Rank %d][INFO] dim: %d\n", rank, DIM);
+        int pointsCount;
+        MPI_Recv(&pointsCount, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        printf("[Rank %d][INFO] pointsCount: %d\n", rank, pointsCount);
+        int clustersCount;
+        MPI_Recv(&clustersCount, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        printf("[Rank %d][INFO] clustersCount: %d\n", rank, clustersCount);
+
+        float *h_pointsValues = (float *)malloc(sizeof(float) * DIM * pointsCount);
+        if (h_pointsValues == NULL)
+        {
+            printf("[Rank %d][ERROR] Failed to allocate memory for points\n", rank);
+            MPI_Abort(MPI_COMM_WORLD, 1);
+        }
+        MPI_Recv(h_pointsValues, DIM * pointsCount, MPI_FLOAT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+        float *h_clustersValues = (float *)malloc(sizeof(float) * DIM * clustersCount);
+        if (h_clustersValues == NULL)
+        {
+            printf("[Rank %d][ERROR] Failed to allocate memory for points\n", rank);
+            MPI_Abort(MPI_COMM_WORLD, 1);
+        }
+
+        printf("[INFO] Received points \n");
+        int iterate = 1;
+
+        // Setup
+        const uint32_t blocksCount = ceil(pointsCount * 1.0 / Consts::THREADS_PER_BLOCK);
+
+        size_t *d_memberships = nullptr;
+        int *d_shouldContinue = nullptr;
+
+        float *d_pointsValues = nullptr;
+        float *d_clustersValues = nullptr;
+
+        CHECK_CUDA(cudaMalloc((void **)&d_memberships, sizeof(size_t) * pointsCount));
+        CHECK_CUDA(cudaMalloc((void **)&d_shouldContinue, sizeof(int) * blocksCount));
+
+        CHECK_CUDA(cudaMalloc((void **)&d_pointsValues, sizeof(float) * pointsCount * DIM));
+        CHECK_CUDA(cudaMemcpy(d_pointsValues, h_pointsValues, DIM * pointsCount, cudaMemcpyHostToDevice));
+
+        CHECK_CUDA(cudaMalloc((void **)&d_clustersValues, sizeof(float) * clustersCount * DIM));
+
+        int *shouldContinue = nullptr;
+        shouldContinue = (int *)malloc(sizeof(int) * blocksCount);
+        if (shouldContinue == nullptr)
+        {
+            printf("[Rank %d][ERROR] Failed to allocate memory for shouldContinue\n", rank);
+            MPI_Abort(MPI_COMM_WORLD, 1);
+        }
+
+        while (iterate)
+        {
+            // Receive new clusters values
+            MPI_Recv(h_clustersValues, DIM * clustersCount, MPI_FLOAT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            CHECK_CUDA(cudaMemcpy(d_clustersValues, h_clustersValues, DIM * clustersCount, cudaMemcpyHostToDevice));
+
+            // Calculate new memberships
+            KMeansData::KMeansDataGPU d_data = {
+                .pointsCount = pointsCount,
+                .clustersCount = clustersCount,
+                .DIM = DIM,
+                .d_pointsValues = d_pointsValues,
+                .d_clustersValues = d_clustersValues,
+            };
+            calculateMembershipMPI<<<blocksCount, Consts::THREADS_PER_BLOCK>>>(d_data, d_memberships, d_shouldContinue);
+
+            // Check if any membership changed
+            CHECK_CUDA(cudaMemcpy(shouldContinue, d_shouldContinue, sizeof(int) * blocksCount, cudaMemcpyDeviceToHost));
+            int totalShouldContinue = 0;
+            for (size_t b = 0; b < blocksCount; b++)
+            {
+                totalShouldContinue += shouldContinue[b];
+            }
+
+            // Send if any membership changed
+            // MPI_Send( + startPointIdx, localPointsCount, MPI_FLOAT, i, 0, MPI_COMM_WORLD);
+
+            // Receive iterate
+            MPI_Recv(&iterate, 1, MPI_INT, 0, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            printf("[Rank %d][INFO] iterate: %d\n", rank, iterate);
+        }
+
+        // // Cleanup
+        free(h_pointsValues);
     }
 } // KMeansClusteringGPUSM

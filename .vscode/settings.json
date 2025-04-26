@@ -62,6 +62,9 @@
         "mutex": "cpp",
         "semaphore": "cpp",
         "stop_token": "cpp",
-        "thread": "cpp"
+        "thread": "cpp",
+        "cinttypes": "cpp",
+        "list": "cpp",
+        "unordered_set": "cpp"
     }
 }

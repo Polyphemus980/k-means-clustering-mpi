@@ -382,13 +382,9 @@ namespace KMeansClusteringGPUSM
         const size_t newClustersSharedMemorySize = clustersCount * DIM * sizeof(float) +
                                                    clustersCount * sizeof(uint32_t) + sizeof(int);
 
-        // Allocate additional GPU memory for the algorithm
-        size_t *d_memberships = nullptr;
-        size_t *d_clustersMembershipCount = nullptr;
-        float *d_newClusters = nullptr;
-        uint32_t *d_newClustersMembershipCount = nullptr;
-        int *d_shouldContinue = nullptr;
-        int *shouldContinue = nullptr;
+        // Define constants for the additional kernels (from non-MPI version)
+        const uint32_t accumulateNewClustersMemershipsBlocksCount = 1;
+        const uint32_t updateClustersBlocksCount = 1;
 
         // Check if device has enough shared memory
         cudaDeviceProp prop;
@@ -402,7 +398,15 @@ namespace KMeansClusteringGPUSM
 
         try
         {
-            // Allocate additional GPU memory
+            // Allocate additional GPU memory (similar to non-MPI version)
+            size_t *d_memberships = nullptr;
+            size_t *d_clustersMembershipCount = nullptr;
+            float *d_newClusters = nullptr;
+            uint32_t *d_newClustersMembershipCount = nullptr;
+            int *d_shouldContinue = nullptr;
+            int *shouldContinue = nullptr;
+
+            // Allocate GPU memory
             cudaMalloc(&d_memberships, sizeof(size_t) * localPointsCount);
             cudaMemset(d_memberships, 0xFF, sizeof(size_t) * localPointsCount);
 
@@ -418,11 +422,10 @@ namespace KMeansClusteringGPUSM
                 throw std::runtime_error("Host memory allocation failed");
             }
 
-            // Create buffers for MPI communication
-            thrust::host_vector<float> localClusterSums(clustersCount * DIM, 0.0f);
-            thrust::host_vector<size_t> localClusterCounts(clustersCount, 0);
-            thrust::host_vector<float> globalClusterSums(clustersCount * DIM);
+            // Create buffers for tracking global cluster information
+            thrust::host_vector<float> oldClusterValues(clustersCount * DIM);
             thrust::host_vector<size_t> globalClusterCounts(clustersCount);
+            thrust::host_vector<float> globalClusters(clustersCount * DIM);
 
             // Main iteration loop
             printf("[START] Process %d: K-means clustering algorithm\n", rank);
@@ -431,9 +434,8 @@ namespace KMeansClusteringGPUSM
             bool continueIterating = true;
             for (size_t iteration = 0; iteration < Consts::MAX_ITERATION && continueIterating; iteration++)
             {
-                // Reset local buffers for this iteration
-                std::fill(localClusterSums.begin(), localClusterSums.end(), 0.0f);
-                std::fill(localClusterCounts.begin(), localClusterCounts.end(), 0);
+                // Save old cluster centers for convergence check
+                memcpy(oldClusterValues.data(), clustersValues.data(), sizeof(float) * clustersCount * DIM);
 
                 // Calculate new memberships on GPU
                 calculateMembershipAndNewClusters<<<newClustersBlocksCount, Consts::THREADS_PER_BLOCK, newClustersSharedMemorySize>>>(
@@ -448,61 +450,87 @@ namespace KMeansClusteringGPUSM
                     localShouldContinue += shouldContinue[b];
                 }
 
-                // Accumulate local cluster data
-                accumulateNewClustersMemerships<<<1, clustersCount>>>(
+                // Accumulate local cluster data (using the same kernel as non-MPI version)
+                accumulateNewClustersMemerships<<<accumulateNewClustersMemershipsBlocksCount, clustersCount>>>(
                     d_data, d_clustersMembershipCount, d_newClustersMembershipCount, newClustersBlocksCount);
                 cudaDeviceSynchronize();
 
-                // Copy membership counts from GPU to CPU
+                // Calculate new clusters locally (using the same kernel as non-MPI version)
+                updateClusters<<<updateClustersBlocksCount, clustersCount * DIM>>>(
+                    d_data, d_clustersMembershipCount, d_newClusters, newClustersBlocksCount);
+                cudaDeviceSynchronize();
+
+                // Copy updated cluster centers and counts from GPU to host
+                thrust::host_vector<float> localClusterValues(clustersCount * DIM);
+                thrust::host_vector<size_t> localClusterCounts(clustersCount);
+                cudaMemcpy(localClusterValues.data(), d_data.d_clustersValues,
+                           sizeof(float) * clustersCount * DIM, cudaMemcpyDeviceToHost);
                 cudaMemcpy(localClusterCounts.data(), d_clustersMembershipCount,
                            sizeof(size_t) * clustersCount, cudaMemcpyDeviceToHost);
 
-                // Calculate local cluster sums
-                for (size_t c = 0; c < clustersCount; c++)
-                {
-                    for (size_t d = 0; d < DIM; d++)
-                    {
-                        float sum = 0.0f;
-                        for (size_t b = 0; b < newClustersBlocksCount; b++)
-                        {
-                            float blockSum;
-                            cudaMemcpy(&blockSum, &d_newClusters[b * clustersCount * DIM + d * clustersCount + c],
-                                       sizeof(float), cudaMemcpyDeviceToHost);
-                            sum += blockSum;
-                        }
-                        localClusterSums[c * DIM + d] = sum;
-                    }
-                }
-
-                // Combine results across all processes
-                int globalContinue;
-                MPI_Allreduce(&localShouldContinue, &globalContinue, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-                MPI_Allreduce(localClusterSums.data(), globalClusterSums.data(), clustersCount * DIM,
-                              MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+                // Combine counts and weighted clusters across all processes
                 MPI_Allreduce(localClusterCounts.data(), globalClusterCounts.data(), clustersCount,
                               MPI_UNSIGNED_LONG, MPI_SUM, MPI_COMM_WORLD);
 
-                // Calculate new cluster centers
+                // Create weighted cluster sums for merging
+                thrust::host_vector<float> weightedClusters(clustersCount * DIM, 0.0f);
+                for (size_t c = 0; c < clustersCount; c++)
+                {
+                    if (localClusterCounts[c] > 0)
+                    {
+                        for (size_t d = 0; d < DIM; d++)
+                        {
+                            weightedClusters[c * DIM + d] = localClusterValues[c * DIM + d] * localClusterCounts[c];
+                        }
+                    }
+                }
+
+                // Sum weighted clusters across processes
+                MPI_Allreduce(weightedClusters.data(), globalClusters.data(), clustersCount * DIM,
+                              MPI_FLOAT, MPI_SUM, MPI_COMM_WORLD);
+
+                // Calculate final global cluster centers
                 for (size_t c = 0; c < clustersCount; c++)
                 {
                     if (globalClusterCounts[c] > 0)
                     {
                         for (size_t d = 0; d < DIM; d++)
                         {
-                            clustersValues[c * DIM + d] = globalClusterSums[c * DIM + d] / globalClusterCounts[c];
+                            clustersValues[c * DIM + d] = globalClusters[c * DIM + d] / globalClusterCounts[c];
                         }
                     }
                 }
 
-                // Update GPU with new cluster centers
+                // Calculate maximum delta for convergence check
+                float maxDelta = 0.0f;
+                for (size_t c = 0; c < clustersCount; c++)
+                {
+                    for (size_t d = 0; d < DIM; d++)
+                    {
+                        float delta = fabs(clustersValues[c * DIM + d] - oldClusterValues[c * DIM + d]);
+                        maxDelta = std::max(maxDelta, delta);
+                    }
+                }
+
+                // Combine convergence checks across processes
+                int globalContinue;
+                MPI_Allreduce(&localShouldContinue, &globalContinue, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+
+                float globalMaxDelta;
+                MPI_Allreduce(&maxDelta, &globalMaxDelta, 1, MPI_FLOAT, MPI_MAX, MPI_COMM_WORLD);
+
+                // Update GPU with new global cluster centers
                 cudaMemcpy(d_data.d_clustersValues, clustersValues.data(),
                            sizeof(float) * clustersCount * DIM, cudaMemcpyHostToDevice);
 
-                // Check for convergence
-                continueIterating = (globalContinue > 0);
+                // Check for convergence - both membership change and center movement
+                continueIterating = (globalContinue > 0) && (globalMaxDelta > 1e-6);
 
-                printf("[INFO] Process %d: Iteration %zu, global changed points: %d\n",
-                       rank, iteration, globalContinue);
+                if (rank == 0)
+                {
+                    printf("[INFO] Iteration %zu, global changed points: %d, max delta: %f\n",
+                           iteration, globalContinue, globalMaxDelta);
+                }
             }
 
             gpuTimer.end();
@@ -567,27 +595,9 @@ namespace KMeansClusteringGPUSM
         {
             fprintf(stderr, "[ERROR] Process %d: %s\n", rank, e.what());
 
-            // Clean up resources
-            if (shouldContinue)
-                free(shouldContinue);
-            if (d_memberships)
-                cudaFree(d_memberships);
-            if (d_clustersMembershipCount)
-                cudaFree(d_clustersMembershipCount);
-            if (d_newClusters)
-                cudaFree(d_newClusters);
-            if (d_newClustersMembershipCount)
-                cudaFree(d_newClustersMembershipCount);
-            if (d_shouldContinue)
-                cudaFree(d_shouldContinue);
-            if (d_data.d_pointsValues)
-                cudaFree(d_data.d_pointsValues);
-            if (d_data.d_clustersValues)
-                cudaFree(d_data.d_clustersValues);
-
-            // Abort MPI to ensure all processes exit
+            // Clean up resources and abort MPI
             MPI_Abort(MPI_COMM_WORLD, 1);
-            return Utils::ClusteringResult{}; // This is never reached
+            return Utils::ClusteringResult{};
         }
     }
 } // KMeansClusteringGPUSM

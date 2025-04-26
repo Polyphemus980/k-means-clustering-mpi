@@ -23,6 +23,8 @@ namespace KMeansClusteringGPUSM
     __global__ void updateClusters(KMeansData::KMeansDataGPU d_data, size_t *d_clustersMembershipCount, float *d_newClusters, size_t previousBlocksCount);
 
     Utils::ClusteringResult kMeansClustering(KMeansData::KMeansDataGPU d_data);
+
+    Utils::ClusteringResult kMeansClusteringMPI(const KMeansData::KMeansData &h_kMeansData);
 } // KMeansClusteringGPUSM
 
 #endif // K_MEANS_CLUSTERING_GPU_SM

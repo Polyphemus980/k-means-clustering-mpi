@@ -80,6 +80,11 @@ namespace KMeansData
             return this->_clustersCount;
         }
 
+        __inline__ size_t getDIM() const
+        {
+            return this->_DIM;
+        }
+
         __inline__ const thrust::host_vector<float> &getClustersValues() const
         {
             return this->_clustersValues;

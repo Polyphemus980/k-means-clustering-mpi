@@ -31,7 +31,8 @@ void start(FILE *inputFile, size_t pointsCount, size_t clustersCount, Utils::Pro
     switch (programArgs.algorithmMode)
     {
     case Utils::AlgorithmMode::GPU_FIRST:
-        result = KMeansClusteringGPUSM::kMeansClustering(h_kMeansData.transformToGPURepresentation());
+        // result = KMeansClusteringGPUSM::kMeansClustering(h_kMeansData.transformToGPURepresentation());
+        result = KMeansClusteringGPUSM::kMeansClusteringMPI(h_kMeansData);
         break;
     default:
         throw std::runtime_error("UNREACHABLE");

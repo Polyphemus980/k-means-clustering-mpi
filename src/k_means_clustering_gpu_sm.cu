@@ -293,7 +293,7 @@ namespace KMeansClusteringGPUSM
         };
     }
 
-    Utils::ClusteringResult kMeansClusteringMPI(const KMeansData::KMeansData &h_kMeansData)
+    Utils::ClusteringResult kMeansClusteringMPI(const KMeansData::KMeansData &h_kMeansData, int size)
     {
         CpuTimer::Timer cpuTimer;
         GpuTimer::Timer gpuTimer;
@@ -321,10 +321,15 @@ namespace KMeansClusteringGPUSM
 
         printf("[INFO] Process %d handles points %zu to %zu (%zu points)\n",
                rank, startPointIdx, startPointIdx + localPointsCount - 1, localPointsCount);
-        
+
         if (rank == 0)
         {
             MPI
         }
+    }
+
+    void kMeansClusteringMPIAdditionalRank(int rank, int size)
+    {
+        printf("my rank is: %d\n", rank);
     }
 } // KMeansClusteringGPUSM

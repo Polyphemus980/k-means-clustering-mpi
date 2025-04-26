@@ -2,6 +2,7 @@
 #include <cuda_runtime.h>
 #include <exception>
 #include <cstring>
+#include "mpi.h"
 
 #include "utils.cuh"
 #include "file_io.cuh"
@@ -11,7 +12,7 @@
 // This function is an actual entry point
 // We assume that at this point `inputFile` is changed in a way that
 // Only N, DIM and K was read from it
-void start(FILE *inputFile, size_t pointsCount, size_t clustersCount, Utils::ProgramArgs &programArgs, size_t DIM)
+void start(FILE *inputFile, size_t pointsCount, size_t clustersCount, Utils::ProgramArgs &programArgs, size_t DIM, int size)
 {
     KMeansData::KMeansData h_kMeansData;
     switch (programArgs.inputFileType)
@@ -32,7 +33,7 @@ void start(FILE *inputFile, size_t pointsCount, size_t clustersCount, Utils::Pro
     {
     case Utils::AlgorithmMode::GPU_FIRST:
         // result = KMeansClusteringGPUSM::kMeansClustering(h_kMeansData.transformToGPURepresentation());
-        result = KMeansClusteringGPUSM::kMeansClusteringMPI(h_kMeansData);
+        result = KMeansClusteringGPUSM::kMeansClusteringMPI(h_kMeansData, size);
         break;
     default:
         throw std::runtime_error("UNREACHABLE");
@@ -41,14 +42,14 @@ void start(FILE *inputFile, size_t pointsCount, size_t clustersCount, Utils::Pro
     FileIO::SaveResultToTextFile(programArgs.outputFilePath, result, h_kMeansData.getClustersCount(), DIM);
 }
 
-int main(int argc, char **argv)
+void mainRank(int argc, char **argv, int size)
 {
     if (argc != 5)
     {
         fprintf(stderr, "Invalid arguments count\n");
         Utils::usage(argv[0]);
     }
-    
+
     Utils::InputFileType inputFileType{};
     if (strcmp(argv[1], "txt") == 0)
     {
@@ -123,7 +124,27 @@ int main(int argc, char **argv)
 
     printf("[INFO] Points: %zu, clusters: %zu, dimensions: %zu\n", parameters.pointsCount, parameters.clustersCount, parameters.dimensions);
 
-    start(inputFile, parameters.pointsCount, parameters.clustersCount, args, parameters.dimensions);
+    start(inputFile, parameters.pointsCount, parameters.clustersCount, args, parameters.dimensions, size);
+}
+
+int main(int argc, char **argv)
+{
+    // Initialize MPI environment
+    int rank, size;
+    MPI_Init(NULL, NULL);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+
+    printf("[INFO] Process %d of %d started\n", rank, size);
+
+    if (rank == 0)
+    {
+        mainRank(argc, argv, size);
+    }
+    else
+    {
+        KMeansClusteringGPUSM::kMeansClusteringMPIAdditionalRank(rank, size);
+    }
 
     return 0;
 }

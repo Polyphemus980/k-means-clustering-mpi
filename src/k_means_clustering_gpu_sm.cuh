@@ -24,7 +24,8 @@ namespace KMeansClusteringGPUSM
 
     Utils::ClusteringResult kMeansClustering(KMeansData::KMeansDataGPU d_data);
 
-    Utils::ClusteringResult kMeansClusteringMPI(const KMeansData::KMeansData &h_kMeansData);
+    Utils::ClusteringResult kMeansClusteringMPI(const KMeansData::KMeansData &h_kMeansData, int size);
+    void kMeansClusteringMPIAdditionalRank(int rank, int size);
 } // KMeansClusteringGPUSM
 
 #endif // K_MEANS_CLUSTERING_GPU_SM

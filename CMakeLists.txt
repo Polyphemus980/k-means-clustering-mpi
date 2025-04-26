@@ -10,4 +10,4 @@ project(KMeans LANGUAGES CXX CUDA)
 add_compile_options(--extended-lambda)
 
 # Add CUDA executable target
-add_executable(KMeans src/base_timer.cuh src/consts.cuh src/cpu_timer.cu src/cpu_timer.cuh src/file_io.cu src/file_io.cuh src/gpu_timer.cu src/gpu_timer.cuh src/k_means_clustering_cpu.cuh src/k_means_clustering_gpu_sm.cuh src/k_means_clustering_gpu_thrust.cuh src/k_means_data.cuh src/main.cu src/utils.cu src/utils.cuh)
+add_executable(KMeans src/base_timer.cuh src/consts.cuh src/cpu_timer.cu src/cpu_timer.cuh src/file_io.cu src/file_io.cuh src/gpu_timer.cu src/gpu_timer.cuh src/k_means_clustering_gpu_sm.cuh src/k_means_clustering_gpu_sm.cu src/k_means_data.cuh src/k_means_data.cu src/main.cu src/utils.cu src/utils.cuh)

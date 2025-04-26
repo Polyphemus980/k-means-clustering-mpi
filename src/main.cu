@@ -6,24 +6,21 @@
 #include "utils.cuh"
 #include "file_io.cuh"
 #include "k_means_data.cuh"
-#include "k_means_clustering_cpu.cuh"
 #include "k_means_clustering_gpu_sm.cuh"
-#include "k_means_clustering_gpu_thrust.cuh"
 
 // This function is an actual entry point
 // We assume that at this point `inputFile` is changed in a way that
 // Only N, DIM and K was read from it
-template <size_t DIM>
-void start(FILE *inputFile, size_t pointsCount, size_t clustersCount, Utils::ProgramArgs &programArgs)
+void start(FILE *inputFile, size_t pointsCount, size_t clustersCount, Utils::ProgramArgs &programArgs, size_t DIM)
 {
-    KMeansData::KMeansData<DIM> h_kMeansData;
+    KMeansData::KMeansData h_kMeansData;
     switch (programArgs.inputFileType)
     {
     case Utils::InputFileType::TEXT:
-        h_kMeansData = FileIO::LoadFromTextFile<DIM>(inputFile, pointsCount, clustersCount);
+        h_kMeansData = FileIO::LoadFromTextFile(inputFile, pointsCount, clustersCount, DIM);
         break;
     case Utils::InputFileType::BINARY:
-        h_kMeansData = FileIO::LoadFromBinFile<DIM>(inputFile, pointsCount, clustersCount);
+        h_kMeansData = FileIO::LoadFromBinFile(inputFile, pointsCount, clustersCount, DIM);
         break;
     default:
         throw std::runtime_error("UNREACHABLE");
@@ -33,20 +30,14 @@ void start(FILE *inputFile, size_t pointsCount, size_t clustersCount, Utils::Pro
     Utils::ClusteringResult result;
     switch (programArgs.algorithmMode)
     {
-    case Utils::AlgorithmMode::CPU:
-        result = KMeansClusteringCPU::kMeanClustering<DIM>(h_kMeansData);
-        break;
     case Utils::AlgorithmMode::GPU_FIRST:
-        result = KMeansClusteringGPUSM::kMeansClustering<DIM>(h_kMeansData.transformToGPURepresentation());
-        break;
-    case Utils::AlgorithmMode::GPU_SECOND:
-        result = KMeansClusteringGPUThrust::kMeansClustering<DIM>(h_kMeansData.transformToGPUThrustRepresentation());
+        result = KMeansClusteringGPUSM::kMeansClustering(h_kMeansData.transformToGPURepresentation());
         break;
     default:
         throw std::runtime_error("UNREACHABLE");
     }
 
-    FileIO::SaveResultToTextFile<DIM>(programArgs.outputFilePath, result, h_kMeansData.getClustersCount());
+    FileIO::SaveResultToTextFile(programArgs.outputFilePath, result, h_kMeansData.getClustersCount(), DIM);
 }
 
 int main(int argc, char **argv)
@@ -131,72 +122,7 @@ int main(int argc, char **argv)
 
     printf("[INFO] Points: %zu, clusters: %zu, dimensions: %zu\n", parameters.pointsCount, parameters.clustersCount, parameters.dimensions);
 
-    switch (parameters.dimensions)
-    {
-    case 1:
-        start<1>(inputFile, parameters.pointsCount, parameters.clustersCount, args);
-        break;
-    case 2:
-        start<2>(inputFile, parameters.pointsCount, parameters.clustersCount, args);
-        break;
-    case 3:
-        start<3>(inputFile, parameters.pointsCount, parameters.clustersCount, args);
-        break;
-    case 4:
-        start<4>(inputFile, parameters.pointsCount, parameters.clustersCount, args);
-        break;
-    case 5:
-        start<5>(inputFile, parameters.pointsCount, parameters.clustersCount, args);
-        break;
-    case 6:
-        start<6>(inputFile, parameters.pointsCount, parameters.clustersCount, args);
-        break;
-    case 7:
-        start<7>(inputFile, parameters.pointsCount, parameters.clustersCount, args);
-        break;
-    case 8:
-        start<8>(inputFile, parameters.pointsCount, parameters.clustersCount, args);
-        break;
-    case 9:
-        start<9>(inputFile, parameters.pointsCount, parameters.clustersCount, args);
-        break;
-    case 10:
-        start<10>(inputFile, parameters.pointsCount, parameters.clustersCount, args);
-        break;
-    case 11:
-        start<11>(inputFile, parameters.pointsCount, parameters.clustersCount, args);
-        break;
-    case 12:
-        start<12>(inputFile, parameters.pointsCount, parameters.clustersCount, args);
-        break;
-    case 13:
-        start<13>(inputFile, parameters.pointsCount, parameters.clustersCount, args);
-        break;
-    case 14:
-        start<14>(inputFile, parameters.pointsCount, parameters.clustersCount, args);
-        break;
-    case 15:
-        start<15>(inputFile, parameters.pointsCount, parameters.clustersCount, args);
-        break;
-    case 16:
-        start<16>(inputFile, parameters.pointsCount, parameters.clustersCount, args);
-        break;
-    case 17:
-        start<17>(inputFile, parameters.pointsCount, parameters.clustersCount, args);
-        break;
-    case 18:
-        start<18>(inputFile, parameters.pointsCount, parameters.clustersCount, args);
-        break;
-    case 19:
-        start<19>(inputFile, parameters.pointsCount, parameters.clustersCount, args);
-        break;
-    case 20:
-        start<20>(inputFile, parameters.pointsCount, parameters.clustersCount, args);
-        break;
-    default:
-        throw std::runtime_error("Unsupported dimension");
-        break;
-    }
+    start(inputFile, parameters.pointsCount, parameters.clustersCount, args, parameters.dimensions);
 
     return 0;
 }

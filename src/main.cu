@@ -48,7 +48,7 @@ int main(int argc, char **argv)
         fprintf(stderr, "Invalid arguments count\n");
         Utils::usage(argv[0]);
     }
-
+    
     Utils::InputFileType inputFileType{};
     if (strcmp(argv[1], "txt") == 0)
     {

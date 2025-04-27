@@ -39,7 +39,7 @@ void start(FILE *inputFile, size_t pointsCount, size_t clustersCount, Utils::Pro
         throw std::runtime_error("UNREACHABLE");
     }
 
-    //FileIO::SaveResultToTextFile(programArgs.outputFilePath, result, h_kMeansData.getClustersCount(), DIM);
+    FileIO::SaveResultToTextFile(programArgs.outputFilePath, result, h_kMeansData.getClustersCount(), DIM);
 }
 
 void mainRank(int argc, char **argv, int size)

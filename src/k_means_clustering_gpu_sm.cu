@@ -174,24 +174,10 @@ namespace KMeansClusteringGPUSM
         float *s_clusters = (float *)sharedMemory;
         uint32_t *s_clustersMembershipCount = (uint32_t *)&s_clusters[clustersCount * DIM];
 
-        if (threadId == 0)
-        {
-            printf("Start \n");
-        }
         // Initialize shared memory in each block
-        if (threadId == 0)
-        {
-            printf("Access \n");
-        }
         if (localThreadId < clustersCount * DIM)
         {
-            printf("[thread %d, %d] i am here before \n", threadId, localThreadId);
             s_clusters[localThreadId] = 0.0f;
-            printf("[thread %d, %d] i am here \n", threadId, localThreadId);
-        }
-        if (threadId == 0)
-        {
-            printf("[thread %d] after s_clusters", threadId);
         }
 
         if (localThreadId < clustersCount)
@@ -202,10 +188,6 @@ namespace KMeansClusteringGPUSM
         // Ensure shared memory is properly initialized
         __syncthreads();
 
-        if (threadId == 0)
-        {
-            printf("[thread %d] after synctrheads", threadId);
-        }
         // For each point find its nearest cluster, update membership table and save results in shared memory
         if (threadId < pointsCount)
         {
@@ -220,20 +202,10 @@ namespace KMeansClusteringGPUSM
         // Finish all calculation made on shared memory
         __syncthreads();
 
-        if (threadId == 0)
-        {
-            printf("[thread %d] after second synctrheads\n", threadId);
-        }
-
         // Copy results from shared memory to global memory
         if (localThreadId < clustersCount * DIM)
         {
             d_newClusters[blockIdx.x * clustersCount * DIM + localThreadId] = s_clusters[localThreadId];
-        }
-
-        if (threadId == 0)
-        {
-            printf("[thread %d] after d_newClusters\n", threadId);
         }
 
         if (localThreadId < clustersCount)
@@ -493,6 +465,9 @@ namespace KMeansClusteringGPUSM
         CHECK_CUDA(cudaMemcpy(d_pointsValues, pointValues, DIM * pointsCount * sizeof(float), cudaMemcpyHostToDevice));
 
         CHECK_CUDA(cudaMalloc((void **)&d_clustersValues, sizeof(float) * clustersCount * DIM));
+
+        CHECK_CUDA(cudaMalloc((void **)&d_newClustersValues, sizeof(float) * clustersCount * DIM));
+
         CHECK_CUDA(cudaMemcpy(d_clustersValues, clusterValues, DIM * clustersCount * sizeof(float), cudaMemcpyHostToDevice));
 
         int *shouldContinue = nullptr;
@@ -515,6 +490,7 @@ namespace KMeansClusteringGPUSM
                 totalShouldContinue += f;
             }
 
+            printf("[INFO] Iteration: %d total changed: %d \n", i, totalShouldContinue);
             // Send info if the process continues - membership change sum == 0 || is the last iteration , break otherwise
             if (totalShouldContinue == 0 || i == Consts::MAX_ITERATION - 1)
             {
@@ -535,12 +511,13 @@ namespace KMeansClusteringGPUSM
             }
             // If process continues receive new memberships
 
+            CHECK_CUDA(cudaMemcpy(h_totalMemberships, d_memberships, localPointCounts[0] * sizeof(int), cudaMemcpyDeviceToHost));
+
             for (int j = 1; j < size; j++)
             {
-                MPI_Recv(h_totalMemberships + startPointIndices[j], localPointCounts[j] * DIM, MPI_INT, j, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+                MPI_Recv(h_totalMemberships + startPointIndices[j], localPointCounts[j], MPI_INT, j, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
             }
-            CHECK_CUDA(cudaMemcpy(d_totalMemberships, d_memberships, localPointCounts[0] * sizeof(int), cudaMemcpyDeviceToDevice));
-            CHECK_CUDA(cudaMemcpy(d_totalMemberships + localPointCounts[0], h_totalMemberships, (pointsCount - localPointCounts[0]) * sizeof(int), cudaMemcpyHostToDevice));
+            CHECK_CUDA(cudaMemcpy(d_totalMemberships, h_totalMemberships, pointsCount * sizeof(int), cudaMemcpyHostToDevice));
 
             // Calculate and send new centroids
             KMeansData::KMeansDataGPU d_data = {
@@ -550,7 +527,6 @@ namespace KMeansClusteringGPUSM
                 .d_pointsValues = d_pointsValues,
                 .d_clustersValues = d_clustersValues,
             };
-            printf("shared memory size %d \n", newClustersSharedMemorySize);
             calculateNewClustersMPI<<<newClustersBlocksCount, Consts::THREADS_PER_BLOCK, newClustersSharedMemorySize>>>(clustersCount, DIM, d_pointsValues, pointsCount, d_newClustersValues, d_newClustersMembershipCounts, d_totalMemberships);
             CHECK_CUDA(cudaGetLastError());
             CHECK_CUDA(cudaDeviceSynchronize());
@@ -573,7 +549,7 @@ namespace KMeansClusteringGPUSM
         }
 
         return Utils::ClusteringResult{
-            .clustersValues = thrust::host_vector<float>(),
+            .clustersValues = thrust::host_vector<float>(h_clusterValues, h_clusterValues + clustersCount * DIM),
             .membership = thrust::host_vector<size_t>(),
         };
     }
@@ -628,6 +604,7 @@ namespace KMeansClusteringGPUSM
         float *d_clustersValues = nullptr;
 
         CHECK_CUDA(cudaMalloc((void **)&d_memberships, sizeof(int) * pointsCount));
+        CHECK_CUDA(cudaMemset(d_memberships, -1, sizeof(int) * pointsCount));
         CHECK_CUDA(cudaMalloc((void **)&d_shouldContinue, sizeof(int) * blocksCount));
 
         CHECK_CUDA(cudaMalloc((void **)&d_pointsValues, sizeof(float) * pointsCount * DIM));
@@ -689,7 +666,7 @@ namespace KMeansClusteringGPUSM
             .d_pointsValues = d_pointsValues,
             .d_clustersValues = d_clustersValues,
         };
-        printf("blocksCount = %d, THREADS_PER_BLOCK = %d\n", blocksCount, Consts::THREADS_PER_BLOCK);
+
         calculateMembershipMPI<<<blocksCount, Consts::THREADS_PER_BLOCK>>>(d_data, d_memberships, d_shouldContinue);
         CHECK_CUDA(cudaGetLastError());
         CHECK_CUDA(cudaDeviceSynchronize());

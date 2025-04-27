@@ -18,6 +18,8 @@ namespace KMeansClusteringGPUSM
 
     __global__ void calculateMembershipAndNewClusters(KMeansData::KMeansDataGPU d_data, float *d_newClusters, uint32_t *d_newClustersMembershipCount, size_t *d_memberships, int *d_shouldContinue);
 
+    __global__ void calculateMembershipMPI(KMeansData::KMeansDataGPU d_data, int *d_memberships, int *d_shouldContinue);
+
     __global__ void accumulateNewClustersMemerships(KMeansData::KMeansDataGPU d_data, size_t *d_clustersMembershipCount, uint32_t *d_newClustersMembershipCount, size_t previousBlocksCount);
 
     __global__ void updateClusters(KMeansData::KMeansDataGPU d_data, size_t *d_clustersMembershipCount, float *d_newClusters, size_t previousBlocksCount);
@@ -26,6 +28,9 @@ namespace KMeansClusteringGPUSM
 
     Utils::ClusteringResult kMeansClusteringMPI(const KMeansData::KMeansData &h_kMeansData, int size);
     void kMeansClusteringMPIAdditionalRank(int rank, int size);
+
+    int newMembershipsAndShouldContinue(int DIM, int pointsCount, float *d_pointsValues, int clustersCount, float *d_clustersValues, int *d_memberships, int *d_shouldContinue, int *shouldContinue, int blocksCount);
+
 } // KMeansClusteringGPUSM
 
 #endif // K_MEANS_CLUSTERING_GPU_SM
